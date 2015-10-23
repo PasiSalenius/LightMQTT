@@ -1,9 +1,5 @@
 //
 //  LightMQTT.swift
-//  Transporter
-//
-//  Created by Pasi Salenius on 19/10/15.
-//  Copyright © 2015 Fresh Bits. All rights reserved.
 //
 
 import Foundation
