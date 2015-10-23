@@ -111,7 +111,7 @@ final class LightMQTT: NSObject, NSStreamDelegate {
     func connect() {
         let baseIntA = Int(arc4random() % 65535)
         let baseIntB = Int(arc4random() % 65535)
-        let clientId = "transporter_" + String(format: "%04X%04X", baseIntA, baseIntB)
+        let clientId = "clientid_" + String(format: "%04X%04X", baseIntA, baseIntB)
 
         let connectBytes: [UInt8] = [
             0x10,                               // FIXED BYTE 1   1 = CONNECT, 0 = DUP QoS RETAIN, not used in CONNECT
@@ -202,8 +202,8 @@ final class LightMQTT: NSObject, NSStreamDelegate {
 
     // MARK: - Stream delegate
 
-    func stream(aStream: NSStream, handleEvent eventCode: NSStreamEvent) {
-        switch aStream {
+    func stream(stream: NSStream, handleEvent eventCode: NSStreamEvent) {
+        switch stream {
         case inputStream!:
             switch (eventCode) {
             case NSStreamEvent.HasBytesAvailable:
