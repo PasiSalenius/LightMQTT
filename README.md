@@ -1,15 +1,15 @@
 # LightMQTT
 
-LightMQTT is a lightweight MQTT client, written in Swift. It is small and requires no other dependencies in your code. It should be able to cope with fragmentation of large MQTT messages. To keep everything running smooth at high loads, there is only a minimum amount of data mangling.
+LightMQTT is a lightweight MQTT client, written in Swift. It's small and requires no other dependencies in your code. It should be able to cope with fragmentation of large MQTT messages. To keep everything running smooth at high loads, there is only a minimum amount of data mangling.
 
-Contributions are totally welcome, you're free to use LightMQTT as you see fit.
+Contributions are totally welcome, feel free to use LightMQTT as you see fit.
 
-LightMQTT was created for a journey planner app that I'm developing for iOS, called [Transporter](https://freshbits.fi/apps/transporter/).
+LightMQTT was created for a journey planner app that I'm developing for iOS and watchOS, called [Transporter](https://freshbits.fi/apps/transporter/).
 
 Installation
 ----
 
-Just copy the file into your project and you're ready to go.
+Just copy the LightMQTT.swift file into your project and you're ready to go.
 
 CocoaPods support and all that needs to wait.
 
