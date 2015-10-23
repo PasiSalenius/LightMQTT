@@ -36,6 +36,9 @@ protocol LightMQTTDelegate {
 
 final class LightMQTT: NSObject, NSStreamDelegate {
 
+    let MQTT_BUFFER_SIZE: Int = 4096
+    let MQTT_KEEPALIVE: UInt8 = 10
+
     private var clientState = MQTTClientState.ConnectionClosed
 
     private var inputStream: NSInputStream?
