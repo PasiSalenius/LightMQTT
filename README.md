@@ -16,22 +16,20 @@ CocoaPods support and all that needs to wait.
 Usage
 ----
 
-Initialize your MQTT client
+Initialize your MQTT client with the MQTT server host and port
 
 ```swift
 
-let mqttClient = LightMQTT()
+let mqttClient = LightMQTT(host: "10.10.10.10", port: 1883)
 
 ```
 
-Set a delegate for the client, then establish a TCP connection to the MQTT server host and port and connect MQTT client. Start issuing ping messages to the server to prevent keepalive timer from expiring.
+Set a delegate for the client, then set up TCP socket and connect MQTT client to the server. LightMQTT begins sending ping messages to the server to prevent keepalive timer from expiring.
 
 ```swift
 
 mqttClient.delegate = self
-mqttClient.connectSocket("10.10.10.10", port: 1883)
 mqttClient.connect()
-mqttClient.beginKeepAliveTimer()
 
 ```
 
@@ -39,7 +37,7 @@ Subscribe to a topic that the MQTT server publishes
 
 ```swift
 
-mqttClient.subscribe("/mytopic/")
+mqttClient.subscribe("/mytopic/#")
 
 ```
 
@@ -47,7 +45,7 @@ One you are done using the client, you should unsubscribe and then disconnect
 
 ```swift
 
-mqttClient.unsubscribe("/mytopic")
+mqttClient.unsubscribe("/mytopic/#")
 mqttClient.disconnect()
 
 ```
@@ -56,8 +54,8 @@ The delegate protocol is simple, as shown below
 
 ```swift
 
-protocol LightMQTTDelegate {
-   func didReceiveMessage(topic: String, message: String)
+protocol LightMQTTDelegate: class {
+    func didReceiveMessage(topic: String, message: String)
 }
 
 ```
@@ -67,7 +65,6 @@ Just implement the delegate function to receive messages on subscribed topics. C
 ```swift
 
 func didReceiveMessage(topic: String, message: String) {
-   let json = JSON(string: message)
    ...
 }
 
