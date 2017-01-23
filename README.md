@@ -24,12 +24,11 @@ let mqttClient = LightMQTT(host: "10.10.10.10", port: 1883)
 
 ```
 
-Set a delegate for the client, then set up TCP socket and connect MQTT client to the server. LightMQTT begins sending ping messages to the server to prevent keepalive timer from expiring.
+Set up TCP socket and connect MQTT client to the server with `connect()`. LightMQTT begins sending ping messages to the server to prevent keepalive timer from expiring.
 
 ```swift
 
-mqttClient.delegate = self
-mqttClient.connect()
+let success = mqttClient.connect()
 
 ```
 
@@ -50,22 +49,27 @@ mqttClient.disconnect()
 
 ```
 
-The delegate protocol is simple, as shown below
+There are currently four optional closures for receiving messages as different data types, as shown below
 
 ```swift
 
-protocol LightMQTTDelegate: class {
-    func didReceiveMessage(topic: String, message: String)
-}
+var receivingMessage: ((_ topic: String, _ message: String) -> ())?
+var receivingBuffer: ((_ topic: String, _ buffer: UnsafeBufferPointer<UTF8.CodeUnit>) -> ())?
+var receivingBytes: ((_ topic: String, _ bytes: [UTF8.CodeUnit]) -> ())?
+var receivingData: ((_ topic: String, _ data: Data) -> ())?
 
 ```
 
-Just implement the delegate function to receive messages on subscribed topics. Currently only String data type is implemented.
+Use one of these closures to read back received MQTT messages. Remember to dispatch back to main thread before updating UI after parsing MQTT message contents.
 
 ```swift
 
-func didReceiveMessage(topic: String, message: String) {
-   ...
+mqttClient.receivingBuffer = { (topic: String, buffer: UnsafeBufferPointer<UTF8.CodeUnit>) in
+    // parse buffer to JSON here
+    
+    DispatchQueue.main.async {
+        // update your UI safely here
+    }
 }
 
 ```
