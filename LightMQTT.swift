@@ -218,7 +218,7 @@ final class LightMQTT: NSObject, StreamDelegate {
     // MARK: - Keep alive timer
 
     fileprivate func delayedPing(interval: UInt16) {
-        let delayTime = DispatchTime.now() + Double(Int64(Double(interval) / 2 * Double(NSEC_PER_SEC))) / Double(NSEC_PER_SEC)
+        let delayTime = DispatchTime.now() + Double(interval / 2)
         DispatchQueue.main.asyncAfter(deadline: delayTime) { [weak self] in
             guard let _ = self?.outputStream else { return }
 
