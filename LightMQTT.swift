@@ -14,33 +14,31 @@ extension UInt16 {
     }
 }
 
-enum MQTTMessage: UInt8 {
-    case connect = 0x10
-    case connack = 0x20
-    case publish = 0x30
-    case puback = 0x40
-    case pubrec = 0x50
-    case pubrel = 0x60
-    case pubcomp = 0x70
-    case subscribe = 0x80
-    case suback = 0x90
-    case unsubscribe = 0xa0
-    case unsuback = 0xb0
-    case pingreq = 0xc0
-    case pingresp = 0xd0
-    case disconnect = 0xe0
-}
-
-enum MQTTMessageParserState {
-    case decodingHeader
-    case decodingLength
-    case decodingData
-}
-
-private let MQTT_BUFFER_SIZE: Int = 4096
-
 final class LightMQTT: NSObject, StreamDelegate {
 
+    enum MQTTMessage: UInt8 {
+        case connect = 0x10
+        case connack = 0x20
+        case publish = 0x30
+        case puback = 0x40
+        case pubrec = 0x50
+        case pubrel = 0x60
+        case pubcomp = 0x70
+        case subscribe = 0x80
+        case suback = 0x90
+        case unsubscribe = 0xa0
+        case unsuback = 0xb0
+        case pingreq = 0xc0
+        case pingresp = 0xd0
+        case disconnect = 0xe0
+    }
+
+    enum MQTTMessageParserState {
+        case decodingHeader
+        case decodingLength
+        case decodingData
+    }
+    
     var host: String?
     var port: Int?
 
@@ -56,11 +54,11 @@ final class LightMQTT: NSObject, StreamDelegate {
 
     fileprivate var serialQueue: DispatchQueue?
 
-    fileprivate var messageBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: MQTT_BUFFER_SIZE)
+    fileprivate var messageBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: BUFFER_SIZE)
     fileprivate var byteCount = 0
 
-    fileprivate var messageParserState = MQTTMessageParserState.decodingHeader
-    fileprivate var messageType = MQTTMessage.connack
+    fileprivate var messageParserState: MQTTMessageParserState = .decodingHeader
+    fileprivate var messageType: MQTTMessage = .connack
 
     fileprivate var messageLengthMultiplier = 1
     fileprivate var messageLength = 0
@@ -68,6 +66,8 @@ final class LightMQTT: NSObject, StreamDelegate {
     fileprivate var topicLength: Int?
 
     fileprivate var messageId: UInt16 = 0
+
+    fileprivate static let BUFFER_SIZE: Int = 4096
 
     init?(host: String, port: Int, pingInterval: UInt16 = 10) {
         super.init()
@@ -79,34 +79,35 @@ final class LightMQTT: NSObject, StreamDelegate {
     }
 
     func connect() -> Bool {
-        guard let host = host, let port = port else {
+        guard
+            let host = host, let port = port
+            else { return false }
+
+        disconnect()
+
+        if !socketConnect(host: host, port: port) {
             return false
         }
 
-        if connectSocket(host: host, port: port) {
-            clearMessageParserState()
-            messageId = 0
+        messageId = 0
+        resetParser()
 
-            mqttConnect(keepalive: pingInterval)
-            delayedPing(interval: pingInterval)
-            
-            return true
+        mqttConnect(keepalive: pingInterval)
+        delayedPing(interval: pingInterval)
 
-        } else {
-            return false
-        }
+        return true
     }
 
     func disconnect() {
         mqttDisconnect()
-        disconnectSocket()
+        socketDisconnect()
     }
 
     deinit {
         disconnect()
 
-        messageBuffer.deinitialize(count: MQTT_BUFFER_SIZE)
-        messageBuffer.deallocate(capacity: MQTT_BUFFER_SIZE)
+        messageBuffer.deinitialize(count: LightMQTT.BUFFER_SIZE)
+        messageBuffer.deallocate(capacity: LightMQTT.BUFFER_SIZE)
     }
 
     // MARK: - Public interface
@@ -117,6 +118,199 @@ final class LightMQTT: NSObject, StreamDelegate {
 
     func unsubscribe(from topic: String) {
         mqttUnsubscribe(from: topic)
+    }
+
+    // MARK: - Keep alive timer
+
+    fileprivate func delayedPing(interval: UInt16) {
+        let time = DispatchTime.now() + Double(interval / 2)
+        DispatchQueue.main.asyncAfter(deadline: time) { [weak self] in
+            guard
+                let _ = self?.outputStream
+                else { return }
+
+            self?.mqttPing()
+            self?.delayedPing(interval: interval)
+        }
+    }
+
+    // MARK: - Socket connection
+
+    fileprivate func socketConnect(host: String, port: Int) -> Bool {
+        Stream.getStreamsToHost(withName: host, port: port, inputStream: &inputStream, outputStream: &outputStream)
+
+        if inputStream == nil || outputStream == nil {
+            return false
+        }
+
+        serialQueue = DispatchQueue(label: "readQueue", qos: .background, target: nil)
+
+        inputStream?.delegate = self
+        outputStream?.delegate = self
+
+        inputStream?.schedule(in: .current, forMode: .defaultRunLoopMode)
+        outputStream?.schedule(in: .current, forMode: .defaultRunLoopMode)
+
+        inputStream?.open()
+        outputStream?.open()
+
+        return true
+    }
+
+    fileprivate func socketDisconnect() {
+        inputStream?.remove(from: .current, forMode: .defaultRunLoopMode)
+        outputStream?.remove(from: .current, forMode: .defaultRunLoopMode)
+
+        inputStream?.delegate = nil
+        outputStream?.delegate = nil
+
+        inputStream?.close()
+        outputStream?.close()
+
+        inputStream = nil
+        outputStream = nil
+
+        serialQueue = nil
+    }
+
+    // MARK: - Stream delegate
+
+    @objc internal func stream(_ stream: Stream, handle eventCode: Stream.Event) {
+        switch stream {
+        case let value where value == inputStream:
+            switch (eventCode) {
+            case Stream.Event.hasBytesAvailable:
+                serialQueue?.async { [weak self] in
+                    self?.readStream()
+                }
+
+            case Stream.Event.openCompleted:
+                messageParserState = .decodingHeader
+            case Stream.Event.errorOccurred:
+                disconnect()
+            case Stream.Event.endEncountered:
+                disconnect()
+            default:
+                break
+            }
+
+        default:
+            break
+        }
+    }
+
+    fileprivate func readStream() {
+        guard
+            let inputStream = inputStream, inputStream.streamStatus == .open
+            else { return }
+
+        if messageParserState == .decodingHeader {
+            let count = inputStream.read(messageBuffer, maxLength: 1) // returns -1 count sometimes during active mqtt connection
+            if count > 0 {
+                if let message = MQTTMessage(rawValue: messageBuffer.pointee & 0xf0) {
+                    messageType = message
+                    messageParserState = .decodingLength
+                }
+            }
+        }
+
+        while messageParserState == .decodingLength {
+            let count = inputStream.read(messageBuffer, maxLength: 1)
+            if count > 0 {
+                messageLength += Int(messageBuffer.pointee & 127) * messageLengthMultiplier
+                if messageBuffer.pointee & 128 == 0x00 {
+                    messageParserState = .decodingData
+                } else {
+                    messageLengthMultiplier *= 128
+                }
+
+            } else if count < 0 {
+                disconnect()
+                return
+
+            } else {
+                break
+            }
+        }
+
+        if messageParserState == .decodingData {
+            switch messageType {
+            case .publish:
+                guard messageLength > 0 else {
+                    resetParser()
+                    return
+                }
+
+                let bytesToRead = min(LightMQTT.BUFFER_SIZE, messageLength - byteCount)
+                let count = inputStream.read(messageBuffer.advanced(by: byteCount), maxLength: bytesToRead)
+                if count < 0 {
+                    disconnect()
+                    return
+                }
+
+                byteCount += count
+
+                if byteCount == messageLength {
+                    let topicLength = Int(messageBuffer.pointee) * 256 + Int(messageBuffer.advanced(by: 1).pointee)
+                    let topicPointer = UnsafeBufferPointer(start: messageBuffer + 2, count: topicLength)
+
+                    guard
+                        let topic = String(bytes: topicPointer, encoding: String.Encoding.utf8)
+                        else { break }
+
+                    let pointer = UnsafeBufferPointer(start: messageBuffer + topicLength + 2,
+                                                      count: byteCount - topicLength - 2)
+
+                    if  let closure = receivingMessage,
+                        let message = String(bytes: pointer, encoding: String.Encoding.utf8) {
+                        closure(topic, message)
+                    }
+
+                    if let closure = receivingBuffer {
+                        closure(topic, pointer)
+                    }
+
+                    if let closure = receivingBytes {
+                        closure(topic, Array(pointer))
+                    }
+
+                    if let closure = receivingData {
+                        closure(topic, Data(bytesNoCopy: messageBuffer + topicLength + 2,
+                                            count: byteCount - topicLength - 2,
+                                            deallocator: .none))
+                    }
+
+                    resetParser()
+                }
+
+            case .pingresp:
+                resetParser()
+
+            case .suback:
+                resetParser()
+
+            case .connack:
+                resetParser()
+
+            case .unsuback:
+                resetParser()
+
+            case .disconnect:
+                disconnect()
+
+            default:
+                break
+            }
+        }
+    }
+
+    fileprivate func resetParser() {
+        byteCount = 0
+        messageLength = 0
+        messageLengthMultiplier = 1
+
+        messageParserState = .decodingHeader
+        messageType = .connack
     }
 
     // MARK: - MQTT messages
@@ -169,7 +363,7 @@ final class LightMQTT: NSObject, StreamDelegate {
 
         outputStream?.write(messageBytes, maxLength: messageBytes.count)
     }
-    
+
     fileprivate func mqttSubscribe(to topic: String) {
         messageId += 1
 
@@ -211,170 +405,8 @@ final class LightMQTT: NSObject, StreamDelegate {
             0xc0,                               // FIXED BYTE 1   c = PINGREQ, 0 = DUP QoS RETAIN (not used)
             0x00                                // FIXED BYTE 2   remaining length = 0
         ]
-
+        
         outputStream?.write(messageBytes, maxLength: messageBytes.count)
     }
 
-    // MARK: - Keep alive timer
-
-    fileprivate func delayedPing(interval: UInt16) {
-        let delayTime = DispatchTime.now() + Double(interval / 2)
-        DispatchQueue.main.asyncAfter(deadline: delayTime) { [weak self] in
-            guard let _ = self?.outputStream else { return }
-
-            self?.mqttPing()
-            self?.delayedPing(interval: interval)
-        }
-    }
-
-    // MARK: - Socket connection
-
-    fileprivate func connectSocket(host: String, port: Int) -> Bool {
-        Stream.getStreamsToHost(withName: host, port: port, inputStream: &inputStream, outputStream: &outputStream)
-
-        if inputStream == nil || outputStream == nil { return false }
-
-        serialQueue = DispatchQueue(label: "readQueue", qos: .background, target: nil)
-
-        inputStream?.delegate = self
-        outputStream?.delegate = self
-
-        inputStream?.open()
-        outputStream?.open()
-
-        inputStream?.schedule(in: .current, forMode: .defaultRunLoopMode)
-        outputStream?.schedule(in: .current, forMode: .defaultRunLoopMode)
-
-        return true
-    }
-
-    fileprivate func disconnectSocket() {
-        inputStream?.remove(from: .current, forMode: .defaultRunLoopMode)
-        outputStream?.remove(from: .current, forMode: .defaultRunLoopMode)
-
-        inputStream?.close()
-        outputStream?.close()
-
-        inputStream?.delegate = nil
-        outputStream?.delegate = nil
-
-        inputStream = nil
-        outputStream = nil
-
-        serialQueue = nil
-    }
-
-    // MARK: - Stream delegate
-
-    @objc internal func stream(_ stream: Stream, handle eventCode: Stream.Event) {
-        switch stream {
-        case let val where val == inputStream:
-            switch (eventCode) {
-            case Stream.Event.hasBytesAvailable:
-                serialQueue?.async { [weak self] in
-                    self?.read(stream: stream)
-                }
-
-            case Stream.Event.openCompleted:
-                messageParserState = .decodingHeader
-            case Stream.Event.errorOccurred:
-                break
-            case Stream.Event.endEncountered:
-                break
-            case Stream.Event():
-                break
-            default:
-                break
-            }
-
-        default:
-            break
-        }
-    }
-
-    fileprivate func read(stream: Stream) {
-        guard
-            let inputStream = inputStream, inputStream == stream
-            else { return }
-
-        if messageParserState == .decodingHeader {
-            if inputStream.read(messageBuffer, maxLength: 1) > 0 {
-                if let message = MQTTMessage(rawValue: messageBuffer.pointee & 0xf0) {
-                    messageType = message
-                    messageParserState = .decodingLength
-                }
-            }
-        }
-
-        while messageParserState == .decodingLength {
-            if inputStream.read(messageBuffer, maxLength: 1) == 0 {
-                break
-            }
-
-            messageLength += Int(messageBuffer.pointee & 127) * messageLengthMultiplier
-            if messageBuffer.pointee & 128 == 0x00 {
-                messageParserState = .decodingData
-            } else {
-                messageLengthMultiplier *= 128
-            }
-        }
-
-        if messageParserState == .decodingData {
-            guard messageLength > 0 else {
-                clearMessageParserState()
-                return
-            }
-
-            let bytesToRead = min(MQTT_BUFFER_SIZE, messageLength - byteCount)
-            byteCount += inputStream.read(messageBuffer.advanced(by: byteCount), maxLength: bytesToRead)
-
-            if byteCount == messageLength {
-                switch messageType {
-                case .publish:
-                    let topicLength = Int(messageBuffer.pointee) * 256 + Int(messageBuffer.advanced(by: 1).pointee)
-                    let topicPointer = UnsafeBufferPointer(start: messageBuffer + 2, count: topicLength)
-                    guard let topic = String(bytes: topicPointer, encoding: String.Encoding.utf8) else {
-                        break
-                    }
-
-                    let pointer = UnsafeBufferPointer(start: messageBuffer + topicLength + 2,
-                                                      count: byteCount - topicLength - 2)
-
-                    if  let closure = receivingMessage,
-                        let message = String(bytes: pointer, encoding: String.Encoding.utf8) {
-                        closure(topic, message)
-                    }
-
-                    if let closure = receivingBuffer {
-                        closure(topic, pointer)
-                    }
-
-                    if let closure = receivingBytes {
-                        closure(topic, Array(pointer))
-                    }
-
-                    if let closure = receivingData {
-                        closure(topic, Data(bytesNoCopy: messageBuffer + topicLength + 2,
-                                            count: byteCount - topicLength - 2,
-                                            deallocator: .none))
-                    }
-
-                default:
-                    break
-                }
-
-                clearMessageParserState()
-            }
-        }
-    }
-
-    // MARK: - Housekeeping
-
-    fileprivate func clearMessageParserState() {
-        byteCount = 0
-        messageLength = 0
-        messageLengthMultiplier = 1
-
-        messageParserState = .decodingHeader
-    }
 }
