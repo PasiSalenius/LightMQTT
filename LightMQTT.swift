@@ -14,7 +14,7 @@ extension UInt16 {
     }
 }
 
-final class LightMQTT: NSObject, StreamDelegate {
+final class LightMQTT {
 
     enum MQTTMessage: UInt8 {
         case connect = 0x10
@@ -42,6 +42,8 @@ final class LightMQTT: NSObject, StreamDelegate {
     var host: String?
     var port: Int?
 
+    var isConnected = false
+
     var pingInterval: UInt16 = 10
 
     var receivingMessage: ((_ topic: String, _ message: String) -> ())?
@@ -49,29 +51,16 @@ final class LightMQTT: NSObject, StreamDelegate {
     var receivingBytes: ((_ topic: String, _ bytes: [UTF8.CodeUnit]) -> ())?
     var receivingData: ((_ topic: String, _ data: Data) -> ())?
 
-    fileprivate var inputStream: InputStream?
-    fileprivate var outputStream: OutputStream?
+    private var inputStream: InputStream?
+    private var outputStream: OutputStream?
 
-    fileprivate var serialQueue: DispatchQueue?
+    private var topicLength: Int?
 
-    fileprivate var messageBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: BUFFER_SIZE)
-    fileprivate var byteCount = 0
+    private var messageId: UInt16 = 0
 
-    fileprivate var messageParserState: MQTTMessageParserState = .decodingHeader
-    fileprivate var messageType: MQTTMessage = .connack
-
-    fileprivate var messageLengthMultiplier = 1
-    fileprivate var messageLength = 0
-
-    fileprivate var topicLength: Int?
-
-    fileprivate var messageId: UInt16 = 0
-
-    fileprivate static let BUFFER_SIZE: Int = 4096
+    private static let BUFFER_SIZE: Int = 4096
 
     init?(host: String, port: Int, pingInterval: UInt16 = 10) {
-        super.init()
-
         self.host = host
         self.port = port
 
@@ -83,17 +72,20 @@ final class LightMQTT: NSObject, StreamDelegate {
             let host = host, let port = port
             else { return false }
 
-        disconnect()
+        if inputStream != nil || outputStream != nil {
+            return false
+        }
 
         if !socketConnect(host: host, port: port) {
             return false
         }
 
-        messageId = 0
-        resetParser()
-
         mqttConnect(keepalive: pingInterval)
-        delayedPing(interval: pingInterval)
+        delayPing(interval: pingInterval)
+
+        messageId = 0
+
+        isConnected = true
 
         return true
     }
@@ -101,13 +93,12 @@ final class LightMQTT: NSObject, StreamDelegate {
     func disconnect() {
         mqttDisconnect()
         socketDisconnect()
+
+        isConnected = false
     }
 
     deinit {
         disconnect()
-
-        messageBuffer.deinitialize(count: LightMQTT.BUFFER_SIZE)
-        messageBuffer.deallocate(capacity: LightMQTT.BUFFER_SIZE)
     }
 
     // MARK: - Public interface
@@ -122,195 +113,170 @@ final class LightMQTT: NSObject, StreamDelegate {
 
     // MARK: - Keep alive timer
 
-    fileprivate func delayedPing(interval: UInt16) {
+    private func delayPing(interval: UInt16) {
         let time = DispatchTime.now() + Double(interval / 2)
         DispatchQueue.main.asyncAfter(deadline: time) { [weak self] in
-            guard
-                let _ = self?.outputStream
-                else { return }
-
             self?.mqttPing()
-            self?.delayedPing(interval: interval)
+            self?.delayPing(interval: interval)
         }
     }
 
     // MARK: - Socket connection
 
-    fileprivate func socketConnect(host: String, port: Int) -> Bool {
+    private func socketConnect(host: String, port: Int) -> Bool {
         Stream.getStreamsToHost(withName: host, port: port, inputStream: &inputStream, outputStream: &outputStream)
 
-        if inputStream == nil || outputStream == nil {
+        guard let input = inputStream, let output = outputStream else {
             return false
         }
 
-        serialQueue = DispatchQueue(label: "readQueue", qos: .background, target: nil)
+        input.open()
+        output.open()
 
-        inputStream?.delegate = self
-        outputStream?.delegate = self
-
-        inputStream?.schedule(in: .current, forMode: .defaultRunLoopMode)
-        outputStream?.schedule(in: .current, forMode: .defaultRunLoopMode)
-
-        inputStream?.open()
-        outputStream?.open()
+        DispatchQueue.global(qos: .background).async {
+            self.readStream(inputStream: input)
+        }
 
         return true
     }
 
-    fileprivate func socketDisconnect() {
-        inputStream?.remove(from: .current, forMode: .defaultRunLoopMode)
-        outputStream?.remove(from: .current, forMode: .defaultRunLoopMode)
-
-        inputStream?.delegate = nil
-        outputStream?.delegate = nil
-
+    private func socketDisconnect() {
         inputStream?.close()
         outputStream?.close()
 
         inputStream = nil
         outputStream = nil
-
-        serialQueue = nil
     }
 
-    // MARK: - Stream delegate
+    // MARK: - Stream reading
 
-    @objc internal func stream(_ stream: Stream, handle eventCode: Stream.Event) {
-        switch stream {
-        case let value where value == inputStream:
-            switch (eventCode) {
-            case Stream.Event.hasBytesAvailable:
-                serialQueue?.async { [weak self] in
-                    self?.readStream()
+    private func readStream(inputStream: InputStream) {
+        let messageBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: LightMQTT.BUFFER_SIZE)
+        var byteCount = 0
+
+        var messageParserState: MQTTMessageParserState = .decodingHeader
+        var messageType: MQTTMessage = .connack
+
+        var messageLengthMultiplier = 1
+        var messageLength = 0
+
+        while inputStream.streamStatus == .opening {
+            usleep(1000)
+        }
+
+        while inputStream.streamStatus == .open {
+            messageLengthMultiplier = 1
+            messageLength = 0
+            byteCount = 0
+
+            while messageParserState == .decodingHeader && inputStream.streamStatus == .open {
+                let count = inputStream.read(messageBuffer, maxLength: 1)
+                if count == 0 {
+                    break
+                } else if count < 0 {
+                    return
                 }
 
-            case Stream.Event.openCompleted:
-                messageParserState = .decodingHeader
-            case Stream.Event.errorOccurred:
-                disconnect()
-            case Stream.Event.endEncountered:
-                disconnect()
-            default:
-                break
-            }
-
-        default:
-            break
-        }
-    }
-
-    fileprivate func readStream() {
-        guard
-            let inputStream = inputStream, inputStream.streamStatus == .open
-            else { return }
-
-        if messageParserState == .decodingHeader {
-            let count = inputStream.read(messageBuffer, maxLength: 1) // returns -1 count sometimes during active mqtt connection
-            if count > 0 {
                 if let message = MQTTMessage(rawValue: messageBuffer.pointee & 0xf0) {
                     messageType = message
                     messageParserState = .decodingLength
                 }
             }
-        }
 
-        while messageParserState == .decodingLength {
-            let count = inputStream.read(messageBuffer, maxLength: 1)
-            if count > 0 {
+            while messageParserState == .decodingLength && inputStream.streamStatus == .open {
+                let count = inputStream.read(messageBuffer, maxLength: 1)
+                if count == 0 {
+                    break
+                } else if count < 0 {
+                    return
+                }
+
                 messageLength += Int(messageBuffer.pointee & 127) * messageLengthMultiplier
                 if messageBuffer.pointee & 128 == 0x00 {
                     messageParserState = .decodingData
                 } else {
                     messageLengthMultiplier *= 128
                 }
+            }
 
-            } else if count < 0 {
-                disconnect()
-                return
+            while messageParserState == .decodingData && inputStream.streamStatus == .open {
+                switch messageType {
+                case .publish:
+                    guard messageLength > 0 else {
+                        messageParserState = .decodingHeader
+                        break
+                    }
 
-            } else {
-                break
+                    let bytesToRead = min(LightMQTT.BUFFER_SIZE, messageLength - byteCount)
+                    let count = inputStream.read(messageBuffer.advanced(by: byteCount), maxLength: bytesToRead)
+                    if count == 0 {
+                        break
+                    } else if count < 0 {
+                        return
+                    }
+
+                    byteCount += count
+
+                    if byteCount == messageLength {
+                        let topicLength = Int(messageBuffer.pointee) * 256 + Int(messageBuffer.advanced(by: 1).pointee)
+                        guard byteCount > topicLength + 2 else {
+                            messageParserState = .decodingHeader
+                            break
+                        }
+
+                        let topicPointer = UnsafeBufferPointer(start: messageBuffer + 2, count: topicLength)
+                        guard let topic = String(bytes: topicPointer, encoding: String.Encoding.utf8) else {
+                            messageParserState = .decodingHeader
+                            break
+                        }
+
+                        let pointer = UnsafeBufferPointer(start: messageBuffer + topicLength + 2,
+                                                          count: byteCount - topicLength - 2)
+
+                        if let closure = receivingMessage, let message = String(bytes: pointer, encoding: String.Encoding.utf8) {
+                            closure(topic, message)
+                        }
+
+                        if let closure = receivingBuffer {
+                            closure(topic, pointer)
+                        }
+
+                        if let closure = receivingBytes {
+                            closure(topic, Array(pointer))
+                        }
+
+                        if let closure = receivingData {
+                            closure(topic, Data(bytesNoCopy: messageBuffer + topicLength + 2,
+                                                count: byteCount - topicLength - 2,
+                                                deallocator: .none))
+                        }
+
+                        messageParserState = .decodingHeader
+                    }
+                    
+                case .pingresp:
+                    messageParserState = .decodingHeader
+
+                case .suback:
+                    messageParserState = .decodingHeader
+
+                case .connack:
+                    messageParserState = .decodingHeader
+
+                case .unsuback:
+                    messageParserState = .decodingHeader
+
+                case .disconnect:
+                    return
+
+                default:
+                    messageParserState = .decodingHeader
+                }
             }
         }
 
-        if messageParserState == .decodingData {
-            switch messageType {
-            case .publish:
-                guard messageLength > 0 else {
-                    resetParser()
-                    return
-                }
-
-                let bytesToRead = min(LightMQTT.BUFFER_SIZE, messageLength - byteCount)
-                let count = inputStream.read(messageBuffer.advanced(by: byteCount), maxLength: bytesToRead)
-                if count < 0 {
-                    disconnect()
-                    return
-                }
-
-                byteCount += count
-
-                if byteCount == messageLength {
-                    let topicLength = Int(messageBuffer.pointee) * 256 + Int(messageBuffer.advanced(by: 1).pointee)
-                    let topicPointer = UnsafeBufferPointer(start: messageBuffer + 2, count: topicLength)
-
-                    guard
-                        let topic = String(bytes: topicPointer, encoding: String.Encoding.utf8)
-                        else { break }
-
-                    let pointer = UnsafeBufferPointer(start: messageBuffer + topicLength + 2,
-                                                      count: byteCount - topicLength - 2)
-
-                    if  let closure = receivingMessage,
-                        let message = String(bytes: pointer, encoding: String.Encoding.utf8) {
-                        closure(topic, message)
-                    }
-
-                    if let closure = receivingBuffer {
-                        closure(topic, pointer)
-                    }
-
-                    if let closure = receivingBytes {
-                        closure(topic, Array(pointer))
-                    }
-
-                    if let closure = receivingData {
-                        closure(topic, Data(bytesNoCopy: messageBuffer + topicLength + 2,
-                                            count: byteCount - topicLength - 2,
-                                            deallocator: .none))
-                    }
-
-                    resetParser()
-                }
-
-            case .pingresp:
-                resetParser()
-
-            case .suback:
-                resetParser()
-
-            case .connack:
-                resetParser()
-
-            case .unsuback:
-                resetParser()
-
-            case .disconnect:
-                disconnect()
-
-            default:
-                break
-            }
-        }
-    }
-
-    fileprivate func resetParser() {
-        byteCount = 0
-        messageLength = 0
-        messageLengthMultiplier = 1
-
-        messageParserState = .decodingHeader
-        messageType = .connack
+        messageBuffer.deinitialize(count: LightMQTT.BUFFER_SIZE)
+        messageBuffer.deallocate(capacity: LightMQTT.BUFFER_SIZE)
     }
 
     // MARK: - MQTT messages
@@ -322,7 +288,7 @@ final class LightMQTT: NSObject, StreamDelegate {
      * |--------------------------------------
      */
 
-    fileprivate func mqttConnect(keepalive: UInt16) {
+    private func mqttConnect(keepalive: UInt16) {
         let baseIntA = Int(arc4random() % 65535)
         let baseIntB = Int(arc4random() % 65535)
         let client = "client_" + String(format: "%04X%04X", baseIntA, baseIntB)
@@ -355,7 +321,7 @@ final class LightMQTT: NSObject, StreamDelegate {
         outputStream?.write(messageBytes, maxLength: messageBytes.count)
     }
 
-    fileprivate func mqttDisconnect() {
+    private func mqttDisconnect() {
         let messageBytes: [UInt8] = [
             0xe0,                               // FIXED BYTE 1   e = DISCONNECT, 0 = DUP QoS RETAIN (not used)
             0x00                                // FIXED BYTE 2   remaining length = 0
@@ -364,7 +330,7 @@ final class LightMQTT: NSObject, StreamDelegate {
         outputStream?.write(messageBytes, maxLength: messageBytes.count)
     }
 
-    fileprivate func mqttSubscribe(to topic: String) {
+    private func mqttSubscribe(to topic: String) {
         messageId += 1
 
         let subscribeBytes: [UInt8] = [
@@ -384,7 +350,7 @@ final class LightMQTT: NSObject, StreamDelegate {
         outputStream?.write(messageBytes, maxLength: messageBytes.count)
     }
 
-    fileprivate func mqttUnsubscribe(from topic: String) {
+    private func mqttUnsubscribe(from topic: String) {
         messageId += 1
 
         let unsubscribeBytes: [UInt8] = [
@@ -400,7 +366,7 @@ final class LightMQTT: NSObject, StreamDelegate {
         outputStream?.write(messageBytes, maxLength: messageBytes.count)
     }
 
-    @objc fileprivate func mqttPing() {
+    @objc private func mqttPing() {
         let messageBytes: [UInt8] = [
             0xc0,                               // FIXED BYTE 1   c = PINGREQ, 0 = DUP QoS RETAIN (not used)
             0x00                                // FIXED BYTE 2   remaining length = 0
