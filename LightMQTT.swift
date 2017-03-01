@@ -151,14 +151,19 @@ final class LightMQTT {
     // MARK: - Stream reading
 
     private func readStream(inputStream: InputStream) {
-        let messageBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: LightMQTT.BUFFER_SIZE)
-        var byteCount = 0
-
         var messageParserState: MQTTMessageParserState = .decodingHeader
         var messageType: MQTTMessage = .connack
 
         var messageLengthMultiplier = 1
         var messageLength = 0
+
+        let messageBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: LightMQTT.BUFFER_SIZE)
+        var byteCount = 0
+
+        defer {
+            messageBuffer.deinitialize(count: LightMQTT.BUFFER_SIZE)
+            messageBuffer.deallocate(capacity: LightMQTT.BUFFER_SIZE)
+        }
 
         while inputStream.streamStatus == .opening {
             usleep(1000)
@@ -273,9 +278,6 @@ final class LightMQTT {
                 }
             }
         }
-
-        messageBuffer.deinitialize(count: LightMQTT.BUFFER_SIZE)
-        messageBuffer.deallocate(capacity: LightMQTT.BUFFER_SIZE)
     }
 
     // MARK: - MQTT messages
