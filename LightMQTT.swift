@@ -165,10 +165,6 @@ final class LightMQTT {
         }
 
         while inputStream.streamStatus == .open {
-            messageLengthMultiplier = 1
-            messageLength = 0
-            byteCount = 0
-
             while messageParserState == .decodingHeader && inputStream.streamStatus == .open {
                 let count = inputStream.read(messageBuffer, maxLength: 1)
                 if count == 0 {
@@ -180,6 +176,8 @@ final class LightMQTT {
                 if let message = MQTTMessage(rawValue: messageBuffer.pointee & 0xf0) {
                     messageType = message
                     messageParserState = .decodingLength
+                    messageLengthMultiplier = 1
+                    messageLength = 0
                 }
             }
 
@@ -194,6 +192,7 @@ final class LightMQTT {
                 messageLength += Int(messageBuffer.pointee & 127) * messageLengthMultiplier
                 if messageBuffer.pointee & 128 == 0x00 {
                     messageParserState = .decodingData
+                    byteCount = 0
                 } else {
                     messageLengthMultiplier *= 128
                 }
