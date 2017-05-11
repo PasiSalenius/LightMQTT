@@ -67,7 +67,7 @@ final class LightMQTT {
         self.pingInterval = pingInterval
     }
 
-    func connect() -> Bool {
+    func connect(useTLS:Bool = false) -> Bool {
         guard
             let host = host, let port = port
             else { return false }
@@ -76,7 +76,7 @@ final class LightMQTT {
             return false
         }
 
-        if !socketConnect(host: host, port: port) {
+        if !socketConnect(host: host, port: port, useTLS: useTLS) {
             return false
         }
 
@@ -127,11 +127,16 @@ final class LightMQTT {
 
     // MARK: - Socket connection
 
-    private func socketConnect(host: String, port: Int) -> Bool {
+    private func socketConnect(host: String, port: Int, useTLS: Bool) -> Bool {
         Stream.getStreamsToHost(withName: host, port: port, inputStream: &inputStream, outputStream: &outputStream)
 
         guard let input = inputStream, let output = outputStream else {
             return false
+        }
+
+        if useTLS {
+            input.setProperty(StreamSocketSecurityLevel.tlSv1, forKey: .socketSecurityLevelKey)
+            output.setProperty(StreamSocketSecurityLevel.tlSv1, forKey: .socketSecurityLevelKey)
         }
 
         input.open()
