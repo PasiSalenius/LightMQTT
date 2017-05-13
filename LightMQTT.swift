@@ -114,8 +114,8 @@ final class LightMQTT {
         mqttUnsubscribe(from: topic)
     }
 
-    func publish(topic:String, message:Data?) {
-        self.mqttPublish(topic: topic, message: message ?? Data())
+    func publish(topic: String, message: Data?) {
+        mqttPublish(topic: topic, message: message ?? Data())
     }
 
     // MARK: - Keep alive timer
@@ -390,34 +390,23 @@ final class LightMQTT {
         outputStream?.write(messageBytes, maxLength: messageBytes.count)
     }
 
-    private func mqttEncodeRemainingLength(_ length:UInt) -> [UInt8] {
-        var remainingBytes:[UInt8] = []
-        var workingLength = length
-        while workingLength > 0 {
-            var byte = UInt8(workingLength & 0x7F)
-            workingLength >>= 7
-            if workingLength > 0 {
-                byte &= 0x80
-            }
-            remainingBytes.append(byte)
-        }
-        return remainingBytes
-    }
-
-    private func mqttPublish(topic: String, message:Data) {
-        // QOS 0 only for now
+    // MQTT publish only handles QOS 0 for now
+    private func mqttPublish(topic: String, message: Data) {
         messageId += 1
-        let remainingLength = UInt(2 + topic.utf8.count + message.count) // TODO: Add 2 (for messageId) if/when QOS > 0
-        let publishHeader: [UInt8] = [
-            0x30                               // FIXED BYTE 1   3 = PUBLISH, 0 = DUP QoS RETAIN
-            ] +
-            self.mqttEncodeRemainingLength(remainingLength) // remainingLength, variable
-            + [
-                UInt16(topic.utf8.count).highByte,  // topic length MSB
-                UInt16(topic.utf8.count).lowByte    // topic length LSB
+
+        // TODO: Add 2 (for messageId) if/when QOS > 0
+        let remainingLengthBytes = encodeVariableLength(UInt(2 + topic.utf8.count + message.count))
+
+        let publishBytes: [UInt8] = [
+            0x30] +                             // FIXED BYTE 1   3 = PUBLISH, 0 = DUP QoS RETAIN
+
+        remainingLengthBytes +                  // remaining length, variable
+
+        [UInt16(topic.utf8.count).highByte,     // topic length MSB
+            UInt16(topic.utf8.count).lowByte    // topic length LSB
         ]
         
-        let messageBytes = publishHeader + [UInt8](topic.utf8) + [UInt8](message)
+        let messageBytes = publishBytes + [UInt8](topic.utf8) + [UInt8](message)
         outputStream?.write(messageBytes, maxLength: messageBytes.count)
     }
     
@@ -429,5 +418,23 @@ final class LightMQTT {
         
         outputStream.write(messageBytes, maxLength: messageBytes.count)
     }
-    
+
+    // MARK: - Utils
+
+    private func encodeVariableLength(_ length: UInt) -> [UInt8] {
+        var remainingBytes: [UInt8] = []
+        var workingLength = length
+
+        while workingLength > 0 {
+            var byte = UInt8(workingLength & 0x7F)
+            workingLength >>= 7
+            if workingLength > 0 {
+                byte &= 0x80
+            }
+            remainingBytes.append(byte)
+        }
+
+        return remainingBytes
+    }
+
 }
