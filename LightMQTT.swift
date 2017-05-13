@@ -39,12 +39,14 @@ final class LightMQTT {
         case decodingData
     }
 
-    var isConnected = false
-
     var receivingMessage: ((_ topic: String, _ message: String) -> ())?
     var receivingBuffer: ((_ topic: String, _ buffer: UnsafeBufferPointer<UTF8.CodeUnit>) -> ())?
     var receivingBytes: ((_ topic: String, _ bytes: [UTF8.CodeUnit]) -> ())?
     var receivingData: ((_ topic: String, _ data: Data) -> ())?
+
+    var isConnected: Bool {
+        return inputStream?.streamStatus == .open && outputStream?.streamStatus == .open
+    }
 
     private var host: String?
     private var port: Int?
@@ -87,16 +89,12 @@ final class LightMQTT {
 
         messageId = 0
 
-        isConnected = true
-
         return true
     }
 
     func disconnect() {
         mqttDisconnect()
         socketDisconnect()
-
-        isConnected = false
     }
 
     deinit {
