@@ -38,7 +38,7 @@ final class LightMQTT {
         case decodingLength
         case decodingData
     }
-    
+
     var host: String?
     var port: Int?
 
@@ -142,6 +142,14 @@ final class LightMQTT {
         input.open()
         output.open()
 
+        while input.streamStatus == .opening || output.streamStatus == .opening {
+            usleep(1000)
+        }
+
+        if input.streamStatus != .open || output.streamStatus != .open {
+            return false
+        }
+
         DispatchQueue.global(qos: .background).async {
             self.readStream(inputStream: input)
         }
@@ -172,10 +180,6 @@ final class LightMQTT {
         defer {
             messageBuffer.deinitialize(count: LightMQTT.BUFFER_SIZE)
             messageBuffer.deallocate(capacity: LightMQTT.BUFFER_SIZE)
-        }
-
-        while inputStream.streamStatus == .opening {
-            usleep(1000)
         }
 
         while inputStream.streamStatus == .open {
@@ -266,7 +270,7 @@ final class LightMQTT {
 
                         messageParserState = .decodingHeader
                     }
-                    
+
                 case .pingresp:
                     messageParserState = .decodingHeader
 
@@ -396,17 +400,17 @@ final class LightMQTT {
         let remainingLength = UInt(2 + topic.utf8.count + message.count) // TODO: Add 2 (for messageId) if/when QOS > 0
         let publishHeader: [UInt8] = [
             0x30                               // FIXED BYTE 1   3 = PUBLISH, 0 = DUP QoS RETAIN
-        ] +
+            ] +
             self.mqttEncodeRemainingLength(remainingLength) // remainingLength, variable
-        + [
-            UInt16(topic.utf8.count).highByte,  // topic length MSB
-            UInt16(topic.utf8.count).lowByte    // topic length LSB
+            + [
+                UInt16(topic.utf8.count).highByte,  // topic length MSB
+                UInt16(topic.utf8.count).lowByte    // topic length LSB
         ]
         
         let messageBytes = publishHeader + [UInt8](topic.utf8) + [UInt8](message)
         outputStream?.write(messageBytes, maxLength: messageBytes.count)
     }
-
+    
     @objc private func mqttPing() {
         let messageBytes: [UInt8] = [
             0xc0,                               // FIXED BYTE 1   c = PINGREQ, 0 = DUP QoS RETAIN (not used)
@@ -415,5 +419,5 @@ final class LightMQTT {
         
         outputStream?.write(messageBytes, maxLength: messageBytes.count)
     }
-
+    
 }
