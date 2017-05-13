@@ -114,7 +114,7 @@ final class LightMQTT {
         mqttUnsubscribe(from: topic)
     }
 
-    func publish(topic: String, message: Data?) {
+    func publish(to topic: String, message: Data?) {
         mqttPublish(topic: topic, message: message ?? Data())
     }
 
