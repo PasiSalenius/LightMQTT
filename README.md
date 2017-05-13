@@ -1,8 +1,8 @@
 # LightMQTT
 
-LightMQTT is a lightweight MQTT client, written in Swift. It's small and should be easy to understand and tune for a specific use case. The client requires no other dependencies in your project. To keep everything running smooth at high loads, there is only a minimum amount of data copying from read buffer before actual message parsing.
+LightMQTT is a lightweight MQTT client, written in Swift. It's small and should be easy to understand and tune for a specific use case. The client requires no other dependencies in your project. To keep everything running smooth at high loads, there is only a minimum amount of data copying from read buffer before actual message parsing and all reading from InputStream is done on a dispatched background queue.
 
-Do note that the client offers only very basic functionality, i.e. it connects to server, subscribes to topics and receives messages, no more no less. It should be able to cope with fragmentation of large MQTT messages, although this part has not been heavily tested.
+Do note that the client offers quite basic functionality, i.e. it connects to server, subscribes to topics and receives messages. It is able to publish messages, but only using QoS 0. It should be able to cope with fragmentation of large MQTT messages, although this part has not been heavily tested.
 
 Contributions are totally welcome, feel free to use LightMQTT as you see fit.
 
@@ -18,11 +18,11 @@ CocoaPods support and all that needs to wait.
 Usage
 ----
 
-Initialize your MQTT client with the MQTT server host and port
+Initialize your MQTT client with the MQTT server host and port, and othen optional parameters
 
 ```swift
 
-let mqttClient = LightMQTT(host: "10.10.10.10", port: 1883)
+let mqttClient = LightMQTT(host: "10.10.10.10", port: 1883, pingInterval: 10, useTLS: true)
 
 ```
 
@@ -38,7 +38,15 @@ Subscribe to a topic that the MQTT server publishes
 
 ```swift
 
-mqttClient.subscribe("/mytopic/#")
+mqttClient.subscribe(to: "/mytopic/#")
+
+```
+
+Publish messages as Data as follows
+
+```swift
+
+mqttClient.publish(to: "/mytopic/#", message: someData)
 
 ```
 
@@ -46,7 +54,7 @@ One you are done using the client, you should unsubscribe and then disconnect
 
 ```swift
 
-mqttClient.unsubscribe("/mytopic/#")
+mqttClient.unsubscribe(from: "/mytopic/#")
 mqttClient.disconnect()
 
 ```
