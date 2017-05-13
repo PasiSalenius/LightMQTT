@@ -18,7 +18,7 @@ CocoaPods support and all that needs to wait.
 Usage
 ----
 
-Initialize your MQTT client with the MQTT server host and port, and othen optional parameters
+Initialize your MQTT client with the MQTT server host and port, and other optional parameters
 
 ```swift
 
