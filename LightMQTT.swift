@@ -80,12 +80,15 @@ final class LightMQTT {
             return false
         }
 
-        if !socketConnect(host: host, port: port, useTLS: useTLS) {
+        guard let (input, output) = openStreams(host: host, port: port, useTLS: useTLS) else {
             return false
         }
 
+        inputStream = input
+        outputStream = output
+
         mqttConnect(keepalive: pingInterval)
-        delayPing(interval: pingInterval)
+        delayedPing(outputStream: output, interval: pingInterval)
 
         messageId = 0
 
@@ -94,7 +97,7 @@ final class LightMQTT {
 
     func disconnect() {
         mqttDisconnect()
-        socketDisconnect()
+        closeStreams()
     }
 
     deinit {
@@ -117,21 +120,28 @@ final class LightMQTT {
 
     // MARK: - Keep alive timer
 
-    private func delayPing(interval: UInt16) {
+    private func delayedPing(outputStream: OutputStream, interval: UInt16) {
         let time = DispatchTime.now() + Double(interval / 2)
         DispatchQueue.main.asyncAfter(deadline: time) { [weak self] in
-            self?.mqttPing()
-            self?.delayPing(interval: interval)
+            if outputStream.streamStatus != .open {
+                return
+            }
+
+            self?.mqttPing(outputStream: outputStream)
+            self?.delayedPing(outputStream: outputStream, interval: interval)
         }
     }
 
     // MARK: - Socket connection
 
-    private func socketConnect(host: String, port: Int, useTLS: Bool) -> Bool {
+    private func openStreams(host: String, port: Int, useTLS: Bool) -> (inputStream: InputStream, outputStream: OutputStream)? {
+        var inputStream: InputStream?
+        var outputStream: OutputStream?
+
         Stream.getStreamsToHost(withName: host, port: port, inputStream: &inputStream, outputStream: &outputStream)
 
         guard let input = inputStream, let output = outputStream else {
-            return false
+            return nil
         }
 
         if useTLS {
@@ -147,17 +157,17 @@ final class LightMQTT {
         }
 
         if input.streamStatus != .open || output.streamStatus != .open {
-            return false
+            return nil
         }
 
         DispatchQueue.global(qos: .background).async {
-            self.readStream(inputStream: input)
+            self.readStream(inputStream: input, outputStream: output)
         }
 
-        return true
+        return (input, output)
     }
 
-    private func socketDisconnect() {
+    private func closeStreams() {
         inputStream?.close()
         outputStream?.close()
 
@@ -167,7 +177,7 @@ final class LightMQTT {
 
     // MARK: - Stream reading
 
-    private func readStream(inputStream: InputStream) {
+    private func readStream(inputStream: InputStream, outputStream: OutputStream) {
         var messageParserState: MQTTMessageParserState = .decodingHeader
         var messageType: MQTTMessage = .connack
 
@@ -411,13 +421,13 @@ final class LightMQTT {
         outputStream?.write(messageBytes, maxLength: messageBytes.count)
     }
     
-    @objc private func mqttPing() {
+    @objc private func mqttPing(outputStream: OutputStream) {
         let messageBytes: [UInt8] = [
             0xc0,                               // FIXED BYTE 1   c = PINGREQ, 0 = DUP QoS RETAIN (not used)
             0x00                                // FIXED BYTE 2   remaining length = 0
         ]
         
-        outputStream?.write(messageBytes, maxLength: messageBytes.count)
+        outputStream.write(messageBytes, maxLength: messageBytes.count)
     }
     
 }
