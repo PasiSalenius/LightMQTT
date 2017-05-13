@@ -293,9 +293,6 @@ final class LightMQTT {
                 case .unsuback:
                     messageParserState = .decodingHeader
 
-                case .disconnect:
-                    return
-
                 default:
                     messageParserState = .decodingHeader
                 }
