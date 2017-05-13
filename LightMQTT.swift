@@ -39,17 +39,18 @@ final class LightMQTT {
         case decodingData
     }
 
-    var host: String?
-    var port: Int?
-
     var isConnected = false
-
-    var pingInterval: UInt16 = 10
 
     var receivingMessage: ((_ topic: String, _ message: String) -> ())?
     var receivingBuffer: ((_ topic: String, _ buffer: UnsafeBufferPointer<UTF8.CodeUnit>) -> ())?
     var receivingBytes: ((_ topic: String, _ bytes: [UTF8.CodeUnit]) -> ())?
     var receivingData: ((_ topic: String, _ data: Data) -> ())?
+
+    private var host: String?
+    private var port: Int?
+
+    private var pingInterval: UInt16 = 10
+    private var useTLS = false
 
     private var inputStream: InputStream?
     private var outputStream: OutputStream?
@@ -60,14 +61,15 @@ final class LightMQTT {
 
     private static let BUFFER_SIZE: Int = 4096
 
-    init?(host: String, port: Int, pingInterval: UInt16 = 10) {
+    init?(host: String, port: Int, pingInterval: UInt16 = 10, useTLS: Bool = false) {
         self.host = host
         self.port = port
 
         self.pingInterval = pingInterval
+        self.useTLS = useTLS
     }
 
-    func connect(useTLS:Bool = false) -> Bool {
+    func connect() -> Bool {
         guard
             let host = host, let port = port
             else { return false }
