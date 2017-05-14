@@ -42,6 +42,14 @@ mqttClient.subscribe(to: "/mytopic/#")
 
 ```
 
+Unsubscribe from a topic
+
+```swift
+
+mqttClient.unsubscribe(to: "/mytopic/#")
+
+```
+
 Publish messages as Data as follows
 
 ```swift
@@ -50,11 +58,10 @@ mqttClient.publish(to: "/mytopic/#", message: someData)
 
 ```
 
-One you are done using the client, you should unsubscribe and then disconnect
+One you are done using the client, you should disconnect. Unsubscribing is not necessary as the client connects with Clean Session set to 1, so the broker should remove all subscriptions at disconnect time anyway.
 
 ```swift
 
-mqttClient.unsubscribe(from: "/mytopic/#")
 mqttClient.disconnect()
 
 ```
