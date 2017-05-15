@@ -80,7 +80,7 @@ final class LightMQTT {
             return false
         }
 
-        guard let (input, output) = openStreams(host: host, port: port, useTLS: useTLS) else {
+        guard let (input, output) = openStreams(host: host, port: port) else {
             return false
         }
 
@@ -134,7 +134,7 @@ final class LightMQTT {
 
     // MARK: - Socket connection
 
-    private func openStreams(host: String, port: Int, useTLS: Bool) -> (inputStream: InputStream, outputStream: OutputStream)? {
+    private func openStreams(host: String, port: Int) -> (inputStream: InputStream, outputStream: OutputStream)? {
         var inputStream: InputStream?
         var outputStream: OutputStream?
 
