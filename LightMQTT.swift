@@ -340,7 +340,7 @@ final class LightMQTT {
             remainingLength += (2 + password.utf8.count) // 2 byte password length + codepoints
         }
 
-        let remainingLengthBytes = encodeVariableLength(UInt(remainingLength))
+        let remainingLengthBytes = encodeVariableLength(remainingLength)
 
         let headerBytes: [UInt8] = [
             0x10] +                             // FIXED BYTE 1   1 = CONNECT, 0 = DUP QoS RETAIN, not used in CONNECT
@@ -420,7 +420,7 @@ final class LightMQTT {
         messageId += 1
 
         // TODO: Add 2 (for messageId) if/when QOS > 0
-        let remainingLengthBytes = encodeVariableLength(UInt(2 + topic.utf8.count + message.count))
+        let remainingLengthBytes = encodeVariableLength(2 + topic.utf8.count + message.count)
 
         let publishBytes: [UInt8] = [
             0x30] +                             // FIXED BYTE 1   3 = PUBLISH, 0 = DUP QoS RETAIN
@@ -444,9 +444,9 @@ final class LightMQTT {
     
     // MARK: - Utils
     
-    private func encodeVariableLength(_ length: UInt) -> [UInt8] {
+    private func encodeVariableLength(_ length: Int) -> [UInt8] {
         var remainingBytes: [UInt8] = []
-        var workingLength = length
+        var workingLength = UInt(length)
         
         while workingLength > 0 {
             var byte = UInt8(workingLength & 0x7F)
