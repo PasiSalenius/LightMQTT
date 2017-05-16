@@ -352,7 +352,7 @@ final class LightMQTT {
             0x54,                               // VARIA BYTE 5   T
             0x54,                               // VARIA BYTE 6   T
             0x04,                               // VARIA BYTE 7   Version = 4
-            0x02,                               // VARIA BYTE 8   Username Password RETAIN QoS Will Clean flags
+            connectFlags,                       // VARIA BYTE 8   Username Password RETAIN QoS Will Clean flags
             keepalive.highByte,                 // VARIA BYTE 9   Keep Alive MSB
             keepalive.lowByte                   // VARIA BYTE 10  Keep Alive LSB
         ]
