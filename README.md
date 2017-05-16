@@ -22,7 +22,7 @@ Initialize your MQTT client with the MQTT server host and port, and other option
 
 ```swift
 
-let mqttClient = LightMQTT(host: "10.10.10.10", port: 1883, pingInterval: 10, useTLS: true)
+let mqttClient = LightMQTT(host: "10.10.10.10", port: 1883, pingInterval: 10, useTLS: true, username: "myuser", password: "s3cr3t")
 
 ```
 
