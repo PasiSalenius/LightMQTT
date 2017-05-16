@@ -53,8 +53,8 @@ final class LightMQTT {
 
     private var pingInterval: UInt16 = 10
     private var useTLS = false
-    private var username:String?
-    private var password:String?
+    private var username: String?
+    private var password: String?
 
     private var inputStream: InputStream?
     private var outputStream: OutputStream?
