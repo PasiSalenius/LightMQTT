@@ -357,14 +357,14 @@ final class LightMQTT {
             keepalive.lowByte                   // VARIA BYTE 10  Keep Alive LSB
         ]
 
-        var messageBytes = headerBytes + encodeUTF8Length(client) + [UInt8](client.utf8)
+        var messageBytes = headerBytes + encode(string: client)
 
         if let username = username {
-            messageBytes += (encodeUTF8Length(username) + [UInt8](username.utf8))
+            messageBytes += encode(string: username)
         }
 
         if let password = password {
-            messageBytes += (encodeUTF8Length(password) + [UInt8](password.utf8))
+            messageBytes += encode(string: password)
         }
 
         outputStream?.write(messageBytes, maxLength: messageBytes.count)
@@ -382,36 +382,42 @@ final class LightMQTT {
     private func mqttSubscribe(to topic: String) {
         messageId += 1
 
-        let subscribeBytes: [UInt8] = [
-            0x82,                               // FIXED BYTE 1   8 = SUBSCRIBE, 2 = DUP QoS RETAIN
-            UInt8(topic.utf8.count + 5),        // FIXED BYTE 2   remaining length, msg id + topic length + topic
-            messageId.highByte,                 // VARIA BYTE 1   message id MSB
-            messageId.lowByte,                  // VARIA BYTE 2   message id LSB
-            UInt16(topic.utf8.count).highByte,  // VARIA BYTE 3   topic length MSB
-            UInt16(topic.utf8.count).lowByte    // VARIA BYTE 4   topic length LSB
+        var remainingLength: Int = 3 // initial 3 bytes (messageID and QoS)
+        remainingLength += (2 + topic.utf8.count) // 2 byte topic length + codepoints
+
+        let remainingLengthBytes = encodeVariableLength(remainingLength)
+
+        let headerBytes: [UInt8] = [
+            0x82] +                             // FIXED BYTE 1   8 = SUBSCRIBE, 2 = DUP QoS RETAIN 
+            remainingLengthBytes +              // FIXED BYTE 2+  remaining length
+        [   messageId.highByte,                 // VARIA BYTE 1   message id MSB
+            messageId.lowByte                   // VARIA BYTE 2   message id LSB
         ]
 
         let requestedQosByte: [UInt8] = [
             0x00                                // Requested QoS
         ]
 
-        let messageBytes = subscribeBytes + [UInt8](topic.utf8) + requestedQosByte
+        let messageBytes = headerBytes + encode(string: topic) + requestedQosByte
         outputStream?.write(messageBytes, maxLength: messageBytes.count)
     }
 
     private func mqttUnsubscribe(from topic: String) {
         messageId += 1
 
-        let unsubscribeBytes: [UInt8] = [
-            0xa2,                               // FIXED BYTE 1   a = UNSUBSCRIBE, 2 = DUP QoS RETAIN
-            UInt8(topic.utf8.count + 4),        // FIXED BYTE 2   remaining length, topic id length + 4
-            messageId.highByte,                 // VARIA BYTE 1   message id MSB
-            messageId.lowByte,                  // VARIA BYTE 2   message id LSB
-            UInt16(topic.utf8.count).highByte,  // VARIA BYTE 3   topic length MSB
-            UInt16(topic.utf8.count).lowByte    // VARIA BYTE 4   topic length LSB
+        var remainingLength: Int = 2 // initial 2 bytes (messageID)
+        remainingLength += (2 + topic.utf8.count) // 2 byte topic length + codepoints
+
+        let remainingLengthBytes = encodeVariableLength(remainingLength)
+
+        let headerBytes: [UInt8] = [
+            0xa2] +                             // FIXED BYTE 1   a = UNSUBSCRIBE, 2 = DUP QoS RETAIN
+            remainingLengthBytes +              // FIXED BYTE 2+  remaining length
+        [   messageId.highByte,                 // VARIA BYTE 1   message id MSB
+            messageId.lowByte                   // VARIA BYTE 2   message id LSB
         ]
 
-        let messageBytes = unsubscribeBytes + [UInt8](topic.utf8)
+        let messageBytes = headerBytes + encode(string: topic)
         outputStream?.write(messageBytes, maxLength: messageBytes.count)
     }
 
@@ -422,14 +428,11 @@ final class LightMQTT {
         // TODO: Add 2 (for messageId) if/when QOS > 0
         let remainingLengthBytes = encodeVariableLength(2 + topic.utf8.count + message.count)
 
-        let publishBytes: [UInt8] = [
-            0x30] +                             // FIXED BYTE 1   3 = PUBLISH, 0 = DUP QoS RETAIN
-            remainingLengthBytes +              // remaining length, variable
-            [UInt16(topic.utf8.count).highByte, // topic length MSB
-            UInt16(topic.utf8.count).lowByte    // topic length LSB
-        ]
+        let headerBytes: [UInt8] = [
+                0x30] +                         // FIXED BYTE 1   3 = PUBLISH, 0 = DUP QoS RETAIN
+            remainingLengthBytes                // remaining length, variable
 
-        let messageBytes = publishBytes + [UInt8](topic.utf8) + [UInt8](message)
+        let messageBytes = headerBytes + encode(string: topic) + [UInt8](message)
         outputStream?.write(messageBytes, maxLength: messageBytes.count)
     }
 
@@ -460,8 +463,10 @@ final class LightMQTT {
         return remainingBytes
     }
     
-    private func encodeUTF8Length(_ string: String) -> [UInt8] {
-        return [UInt16(string.utf8.count).highByte, UInt16(string.utf8.count).lowByte]
+    private func encode(string: String) -> [UInt8] {
+        // http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718016
+        let encoded = string.utf8
+        return [UInt16(encoded.count).highByte, UInt16(encoded.count).lowByte] + [UInt8](encoded)
     }
     
 }
