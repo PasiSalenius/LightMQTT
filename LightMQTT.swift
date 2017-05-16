@@ -76,9 +76,9 @@ final class LightMQTT {
     }
 
     func connect() -> Bool {
-        guard
-            let host = host, let port = port
-            else { return false }
+        guard let host = host, let port = port else {
+            return false
+        }
 
         if inputStream != nil || outputStream != nil {
             return false
