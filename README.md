@@ -18,24 +18,26 @@ CocoaPods support and all that needs to wait.
 Usage
 ----
 
-Initialize your MQTT client with the MQTT server host and port
+Initialize your MQTT client with the MQTT server host address
 
 ```swift
 
-let mqttClient = LightMQTT(host: "10.10.10.10", port: 1883)
+let mqttClient = LightMQTT(host: "10.10.10.10")
 
 ```
 
-Or with other optional client parameters
+LightMQTT.Options can be used to specify optional client parameters
 
 ```swift
 
-let mqttClient = LightMQTT(host: "10.10.10.10",
-                           port: 1883,
-                           pingInterval: 10,
-                           useTLS: true,
-                           username: "myuser",
-                           password: "s3cr3t")
+var options = LightMQTT.Options()
+options.useTLS = true
+options.port = 8883
+options.username = "myuser"
+options.password = "s3cr3t"
+options.pingInterval = 60
+
+let client = LightMQTT(host: "10.10.10.10", options: options)
 
 ```
 
