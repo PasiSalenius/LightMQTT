@@ -54,6 +54,7 @@ final class LightMQTT {
         var useTLS = false
         var username: String? = nil
         var password: String? = nil
+        var clientId: String? = nil
 
         var concretePort: Int {
             return port ?? (useTLS ? 8883 : 1883)
@@ -62,7 +63,7 @@ final class LightMQTT {
 
     private var options: Options
     private var host: String
-    
+
     private var inputStream: InputStream?
     private var outputStream: OutputStream?
 
@@ -235,7 +236,7 @@ final class LightMQTT {
                         break
                     }
 
-                    let bytesToRead = min(LightMQTT.BUFFER_SIZE, messageLength - byteCount)
+                    let bytesToRead = min(LightMQTT.BUFFER_SIZE - byteCount, messageLength - byteCount)
                     let count = inputStream.read(messageBuffer.advanced(by: byteCount), maxLength: bytesToRead)
                     if count == 0 {
                         break
@@ -313,7 +314,8 @@ final class LightMQTT {
     private func mqttConnect(keepalive: UInt16) {
         let baseIntA = Int(arc4random() % 65535)
         let baseIntB = Int(arc4random() % 65535)
-        let client = "client_" + String(format: "%04X%04X", baseIntA, baseIntB)
+
+        let clientId = options.clientId ?? String(format: "%04X%04X", baseIntA, baseIntB)
 
         /**
          * |----------------------------------------------------------------------------------
@@ -325,7 +327,7 @@ final class LightMQTT {
         var connectFlags: UInt8 = 0b00000010 // clean session
 
         var remainingLength: Int = 10 // initial 10 bytes
-        remainingLength += (2 + client.utf8.count) // 2 byte client id length + codepoints
+        remainingLength += (2 + clientId.utf8.count) // 2 byte client id length + codepoints
 
         if let username = options.username {
             connectFlags |= 0b10000000
@@ -354,7 +356,7 @@ final class LightMQTT {
             keepalive.lowByte                   // VARIA BYTE 10  Keep Alive LSB
         ]
 
-        var messageBytes = headerBytes + encode(string: client)
+        var messageBytes = headerBytes + encode(string: clientId)
 
         if let username = options.username {
             messageBytes += encode(string: username)
@@ -385,7 +387,7 @@ final class LightMQTT {
         let remainingLengthBytes = encodeVariableLength(remainingLength)
 
         let headerBytes: [UInt8] = [
-            0x82] +                             // FIXED BYTE 1   8 = SUBSCRIBE, 2 = DUP QoS RETAIN 
+            0x82] +                             // FIXED BYTE 1   8 = SUBSCRIBE, 2 = DUP QoS RETAIN
             remainingLengthBytes +              // FIXED BYTE 2+  remaining length
         [   messageId.highByte,                 // VARIA BYTE 1   message id MSB
             messageId.lowByte                   // VARIA BYTE 2   message id LSB
@@ -426,8 +428,8 @@ final class LightMQTT {
         let remainingLengthBytes = encodeVariableLength(2 + topic.utf8.count + message.count)
 
         let headerBytes: [UInt8] = [
-                0x30] +                         // FIXED BYTE 1   3 = PUBLISH, 0 = DUP QoS RETAIN
-            remainingLengthBytes                // remaining length, variable
+            0x30] +                             // FIXED BYTE 1   3 = PUBLISH, 0 = DUP QoS RETAIN
+        remainingLengthBytes                    // remaining length, variable
 
         let messageBytes = headerBytes + encode(string: topic) + [UInt8](message)
         outputStream?.write(messageBytes, maxLength: messageBytes.count)
