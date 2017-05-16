@@ -65,7 +65,7 @@ final class LightMQTT {
 
     private static let BUFFER_SIZE: Int = 4096
 
-    init?(host: String, port: Int, pingInterval: UInt16 = 10, useTLS: Bool = false, username:String? = nil, password:String? = nil) {
+    init?(host: String, port: Int, pingInterval: UInt16 = 10, useTLS: Bool = false, username: String? = nil, password: String? = nil) {
         self.host = host
         self.port = port
 
@@ -256,7 +256,7 @@ final class LightMQTT {
                         }
 
                         let topicPointer = UnsafeBufferPointer(start: messageBuffer + 2, count: topicLength)
-                        guard let topic = String(bytes: topicPointer, encoding: String.Encoding.utf8) else {
+                        guard let topic = String(bytes: topicPointer, encoding: .utf8) else {
                             messageParserState = .decodingHeader
                             break
                         }
@@ -264,7 +264,7 @@ final class LightMQTT {
                         let pointer = UnsafeBufferPointer(start: messageBuffer + topicLength + 2,
                                                           count: byteCount - topicLength - 2)
 
-                        if let closure = receivingMessage, let message = String(bytes: pointer, encoding: String.Encoding.utf8) {
+                        if let closure = receivingMessage, let message = String(bytes: pointer, encoding: .utf8) {
                             closure(topic, message)
                         }
 
@@ -325,24 +325,27 @@ final class LightMQTT {
          * |----------------------------------------------------------------------------------
          */
 
-        var remainingLength:Int = 10 // initial 10 bytes
+        var connectFlags: UInt8 = 0b00000010 // clean session
+
+        var remainingLength: Int = 10 // initial 10 bytes
         remainingLength += (2 + client.utf8.count) // 2 byte client id length + codepoints
-        var connectFlags:UInt8 = 0b00000010 // clean session
-        if let username = self.username {
+
+        if let username = username {
             connectFlags |= 0b10000000
             remainingLength += (2 + username.utf8.count) // 2 byte username length + codepoints
         }
-        if let password = self.password {
+
+        if let password = password {
             connectFlags |= 0b01000000
             remainingLength += (2 + password.utf8.count) // 2 byte password length + codepoints
         }
+
         let remainingLengthBytes = encodeVariableLength(UInt(remainingLength))
 
         let headerBytes: [UInt8] = [
             0x10] +                             // FIXED BYTE 1   1 = CONNECT, 0 = DUP QoS RETAIN, not used in CONNECT
-         remainingLengthBytes +                 // FIXED BYTE 2+   remaining length
-         [
-            0x00,                               // VARIA BYTE 1   length MSB
+            remainingLengthBytes +              // FIXED BYTE 2+  remaining length
+            [0x00,                              // VARIA BYTE 1   length MSB
             0x04,                               // VARIA BYTE 2   length LSB is 4
             0x4d,                               // VARIA BYTE 3   M
             0x51,                               // VARIA BYTE 4   Q
@@ -355,12 +358,15 @@ final class LightMQTT {
         ]
 
         var messageBytes = headerBytes + encodeUTF8Length(client) + [UInt8](client.utf8)
-        if let username = self.username {
+
+        if let username = username {
             messageBytes += (encodeUTF8Length(username) + [UInt8](username.utf8))
         }
-        if let password = self.password {
+
+        if let password = password {
             messageBytes += (encodeUTF8Length(password) + [UInt8](password.utf8))
         }
+
         outputStream?.write(messageBytes, maxLength: messageBytes.count)
     }
 
@@ -418,17 +424,15 @@ final class LightMQTT {
 
         let publishBytes: [UInt8] = [
             0x30] +                             // FIXED BYTE 1   3 = PUBLISH, 0 = DUP QoS RETAIN
-
-        remainingLengthBytes +                  // remaining length, variable
-
-        [UInt16(topic.utf8.count).highByte,     // topic length MSB
+            remainingLengthBytes +              // remaining length, variable
+            [UInt16(topic.utf8.count).highByte, // topic length MSB
             UInt16(topic.utf8.count).lowByte    // topic length LSB
         ]
-        
+
         let messageBytes = publishBytes + [UInt8](topic.utf8) + [UInt8](message)
         outputStream?.write(messageBytes, maxLength: messageBytes.count)
     }
-    
+
     @objc private func mqttPing(outputStream: OutputStream) {
         let messageBytes: [UInt8] = [
             0xc0,                               // FIXED BYTE 1   c = PINGREQ, 0 = DUP QoS RETAIN (not used)
@@ -437,13 +441,13 @@ final class LightMQTT {
         
         outputStream.write(messageBytes, maxLength: messageBytes.count)
     }
-
+    
     // MARK: - Utils
-
+    
     private func encodeVariableLength(_ length: UInt) -> [UInt8] {
         var remainingBytes: [UInt8] = []
         var workingLength = length
-
+        
         while workingLength > 0 {
             var byte = UInt8(workingLength & 0x7F)
             workingLength >>= 7
@@ -452,13 +456,12 @@ final class LightMQTT {
             }
             remainingBytes.append(byte)
         }
-
+        
         return remainingBytes
     }
-
-    private func encodeUTF8Length(_ string:String) -> [UInt8] {
+    
+    private func encodeUTF8Length(_ string: String) -> [UInt8] {
         return [UInt16(string.utf8.count).highByte, UInt16(string.utf8.count).lowByte]
-
     }
-
+    
 }
