@@ -48,51 +48,48 @@ final class LightMQTT {
         return inputStream?.streamStatus == .open && outputStream?.streamStatus == .open
     }
 
-    private var host: String?
-    private var port: Int?
+    struct Options {
+        var port: Int? = nil
+        var pingInterval: UInt16 = 10
+        var useTLS = false
+        var username: String? = nil
+        var password: String? = nil
 
-    private var pingInterval: UInt16 = 10
-    private var useTLS = false
-    private var username: String?
-    private var password: String?
+        var concretePort: Int {
+            return port ?? (useTLS ? 8883 : 1883)
+        }
+    }
 
+    private var options: Options
+    private var host: String
+    
     private var inputStream: InputStream?
     private var outputStream: OutputStream?
-
-    private var topicLength: Int?
 
     private var messageId: UInt16 = 0
 
     private static let BUFFER_SIZE: Int = 4096
 
-    init?(host: String, port: Int, pingInterval: UInt16 = 10, useTLS: Bool = false, username: String? = nil, password: String? = nil) {
+    init(host: String, options: Options = Options()) {
         self.host = host
-        self.port = port
-
-        self.pingInterval = pingInterval
-        self.useTLS = useTLS
-        self.username = username
-        self.password = password
+        self.options = options
     }
 
     func connect() -> Bool {
-        guard let host = host, let port = port else {
-            return false
-        }
 
         if inputStream != nil || outputStream != nil {
             return false
         }
 
-        guard let (input, output) = openStreams(host: host, port: port) else {
+        guard let (input, output) = openStreams(host: host, port: options.concretePort) else {
             return false
         }
 
         inputStream = input
         outputStream = output
 
-        mqttConnect(keepalive: pingInterval)
-        delayedPing(outputStream: output, interval: pingInterval)
+        mqttConnect(keepalive: options.pingInterval)
+        delayedPing(outputStream: output, interval: options.pingInterval)
 
         messageId = 0
 
@@ -148,7 +145,7 @@ final class LightMQTT {
             return nil
         }
 
-        if useTLS {
+        if options.useTLS {
             input.setProperty(StreamSocketSecurityLevel.tlSv1, forKey: .socketSecurityLevelKey)
             output.setProperty(StreamSocketSecurityLevel.tlSv1, forKey: .socketSecurityLevelKey)
         }
@@ -330,12 +327,12 @@ final class LightMQTT {
         var remainingLength: Int = 10 // initial 10 bytes
         remainingLength += (2 + client.utf8.count) // 2 byte client id length + codepoints
 
-        if let username = username {
+        if let username = options.username {
             connectFlags |= 0b10000000
             remainingLength += (2 + username.utf8.count) // 2 byte username length + codepoints
         }
 
-        if let password = password {
+        if let password = options.password {
             connectFlags |= 0b01000000
             remainingLength += (2 + password.utf8.count) // 2 byte password length + codepoints
         }
@@ -359,11 +356,11 @@ final class LightMQTT {
 
         var messageBytes = headerBytes + encode(string: client)
 
-        if let username = username {
+        if let username = options.username {
             messageBytes += encode(string: username)
         }
 
-        if let password = password {
+        if let password = options.password {
             messageBytes += encode(string: password)
         }
 
