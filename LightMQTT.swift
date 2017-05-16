@@ -53,6 +53,8 @@ final class LightMQTT {
 
     private var pingInterval: UInt16 = 10
     private var useTLS = false
+    private var username:String?
+    private var password:String?
 
     private var inputStream: InputStream?
     private var outputStream: OutputStream?
@@ -63,12 +65,14 @@ final class LightMQTT {
 
     private static let BUFFER_SIZE: Int = 4096
 
-    init?(host: String, port: Int, pingInterval: UInt16 = 10, useTLS: Bool = false) {
+    init?(host: String, port: Int, pingInterval: UInt16 = 10, useTLS: Bool = false, username:String? = nil, password:String? = nil) {
         self.host = host
         self.port = port
 
         self.pingInterval = pingInterval
         self.useTLS = useTLS
+        self.username = username
+        self.password = password
     }
 
     func connect() -> Bool {
@@ -321,9 +325,23 @@ final class LightMQTT {
          * |----------------------------------------------------------------------------------
          */
 
-        let connectBytes: [UInt8] = [
-            0x10,                               // FIXED BYTE 1   1 = CONNECT, 0 = DUP QoS RETAIN, not used in CONNECT
-            UInt8(client.utf8.count + 12),      // FIXED BYTE 2   remaining length, client id length + 12
+        var remainingLength:Int = 10 // initial 10 bytes
+        remainingLength += (2 + client.utf8.count) // 2 byte client id length + codepoints
+        var connectFlags:UInt8 = 0b00000010 // clean session
+        if let username = self.username {
+            connectFlags |= 0b10000000
+            remainingLength += (2 + username.utf8.count) // 2 byte username length + codepoints
+        }
+        if let password = self.password {
+            connectFlags |= 0b01000000
+            remainingLength += (2 + password.utf8.count) // 2 byte password length + codepoints
+        }
+        let remainingLengthBytes = encodeVariableLength(UInt(remainingLength))
+
+        let headerBytes: [UInt8] = [
+            0x10] +                             // FIXED BYTE 1   1 = CONNECT, 0 = DUP QoS RETAIN, not used in CONNECT
+         remainingLengthBytes +                 // FIXED BYTE 2+   remaining length
+         [
             0x00,                               // VARIA BYTE 1   length MSB
             0x04,                               // VARIA BYTE 2   length LSB is 4
             0x4d,                               // VARIA BYTE 3   M
@@ -333,12 +351,16 @@ final class LightMQTT {
             0x04,                               // VARIA BYTE 7   Version = 4
             0x02,                               // VARIA BYTE 8   Username Password RETAIN QoS Will Clean flags
             keepalive.highByte,                 // VARIA BYTE 9   Keep Alive MSB
-            keepalive.lowByte,                  // VARIA BYTE 10  Keep Alive LSB
-            UInt16(client.utf8.count).highByte, // VARIA BYTE 11  client id length MSB
-            UInt16(client.utf8.count).lowByte   // VARIA BYTE 12  client id length LSB
+            keepalive.lowByte                   // VARIA BYTE 10  Keep Alive LSB
         ]
 
-        let messageBytes = connectBytes + [UInt8](client.utf8)
+        var messageBytes = headerBytes + encodeUTF8Length(client) + [UInt8](client.utf8)
+        if let username = self.username {
+            messageBytes += (encodeUTF8Length(username) + [UInt8](username.utf8))
+        }
+        if let password = self.password {
+            messageBytes += (encodeUTF8Length(password) + [UInt8](password.utf8))
+        }
         outputStream?.write(messageBytes, maxLength: messageBytes.count)
     }
 
@@ -432,6 +454,11 @@ final class LightMQTT {
         }
 
         return remainingBytes
+    }
+
+    private func encodeUTF8Length(_ string:String) -> [UInt8] {
+        return [UInt16(string.utf8.count).highByte, UInt16(string.utf8.count).lowByte]
+
     }
 
 }
