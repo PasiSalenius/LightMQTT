@@ -55,6 +55,7 @@ final class LightMQTT {
         var username: String? = nil
         var password: String? = nil
         var clientId: String? = nil
+        var bufferSize: Int = 4096
 
         var concretePort: Int {
             return port ?? (useTLS ? 8883 : 1883)
@@ -69,15 +70,12 @@ final class LightMQTT {
 
     private var messageId: UInt16 = 0
 
-    private static let BUFFER_SIZE: Int = 4096
-
     init(host: String, options: Options = Options()) {
         self.host = host
         self.options = options
     }
 
     func connect() -> Bool {
-
         if inputStream != nil || outputStream != nil {
             return false
         }
@@ -186,12 +184,12 @@ final class LightMQTT {
         var messageLengthMultiplier = 1
         var messageLength = 0
 
-        let messageBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: LightMQTT.BUFFER_SIZE)
+        let messageBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: options.bufferSize)
         var byteCount = 0
 
         defer {
-            messageBuffer.deinitialize(count: LightMQTT.BUFFER_SIZE)
-            messageBuffer.deallocate(capacity: LightMQTT.BUFFER_SIZE)
+            messageBuffer.deinitialize(count: options.bufferSize)
+            messageBuffer.deallocate(capacity: options.bufferSize)
         }
 
         while inputStream.streamStatus == .open {
@@ -236,7 +234,7 @@ final class LightMQTT {
                         break
                     }
 
-                    let bytesToRead = min(LightMQTT.BUFFER_SIZE - byteCount, messageLength - byteCount)
+                    let bytesToRead = min(options.bufferSize - byteCount, messageLength - byteCount)
                     let count = inputStream.read(messageBuffer.advanced(by: byteCount), maxLength: bytesToRead)
                     if count == 0 {
                         break
