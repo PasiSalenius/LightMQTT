@@ -454,7 +454,7 @@ final class LightMQTT {
             var byte = UInt8(workingLength & 0x7F)
             workingLength >>= 7
             if workingLength > 0 {
-                byte &= 0x80
+                byte |= 0x80
             }
             remainingBytes.append(byte)
         }
