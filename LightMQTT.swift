@@ -258,6 +258,9 @@ final class LightMQTT {
                                 break
                             }
                         }
+                        
+                        messageParserState = .decodingHeader
+                        break
                     }
 
                     if byteCount == messageLength {
