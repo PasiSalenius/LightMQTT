@@ -248,7 +248,7 @@ final class LightMQTT {
 
                     byteCount += count
 
-                    if byteCount == options.bufferSize {
+                    if byteCount == options.bufferSize && byteCount < messageLength {
                         let drainBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 1024)
                         while byteCount < messageLength && input.streamStatus == .open {
                             let count = input.read(drainBuffer, maxLength: min(1024, messageLength - byteCount))
