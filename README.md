@@ -36,6 +36,7 @@ options.port = 8883
 options.username = "myuser"
 options.password = "s3cr3t"
 options.pingInterval = 60
+options.bufferSize = 4096
 
 let client = LightMQTT(host: "10.10.10.10", options: options)
 
