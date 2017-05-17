@@ -80,7 +80,7 @@ final class LightMQTT {
             return false
         }
 
-        guard let (input, output) = openStreams(host: host, port: options.concretePort) else {
+        guard let (input, output) = openStreams() else {
             return false
         }
 
@@ -134,11 +134,11 @@ final class LightMQTT {
 
     // MARK: - Socket connection
 
-    private func openStreams(host: String, port: Int) -> (inputStream: InputStream, outputStream: OutputStream)? {
+    private func openStreams() -> (inputStream: InputStream, outputStream: OutputStream)? {
         var inputStream: InputStream?
         var outputStream: OutputStream?
 
-        Stream.getStreamsToHost(withName: host, port: port, inputStream: &inputStream, outputStream: &outputStream)
+        Stream.getStreamsToHost(withName: host, port: options.concretePort, inputStream: &inputStream, outputStream: &outputStream)
 
         guard let input = inputStream, let output = outputStream else {
             return nil
@@ -343,15 +343,15 @@ final class LightMQTT {
             0x10] +                             // FIXED BYTE 1   1 = CONNECT, 0 = DUP QoS RETAIN, not used in CONNECT
             remainingLengthBytes +              // FIXED BYTE 2+  remaining length
             [0x00,                              // VARIA BYTE 1   length MSB
-            0x04,                               // VARIA BYTE 2   length LSB is 4
-            0x4d,                               // VARIA BYTE 3   M
-            0x51,                               // VARIA BYTE 4   Q
-            0x54,                               // VARIA BYTE 5   T
-            0x54,                               // VARIA BYTE 6   T
-            0x04,                               // VARIA BYTE 7   Version = 4
-            connectFlags,                       // VARIA BYTE 8   Username Password RETAIN QoS Will Clean flags
-            keepalive.highByte,                 // VARIA BYTE 9   Keep Alive MSB
-            keepalive.lowByte                   // VARIA BYTE 10  Keep Alive LSB
+                0x04,                               // VARIA BYTE 2   length LSB is 4
+                0x4d,                               // VARIA BYTE 3   M
+                0x51,                               // VARIA BYTE 4   Q
+                0x54,                               // VARIA BYTE 5   T
+                0x54,                               // VARIA BYTE 6   T
+                0x04,                               // VARIA BYTE 7   Version = 4
+                connectFlags,                       // VARIA BYTE 8   Username Password RETAIN QoS Will Clean flags
+                keepalive.highByte,                 // VARIA BYTE 9   Keep Alive MSB
+                keepalive.lowByte                   // VARIA BYTE 10  Keep Alive LSB
         ]
 
         var messageBytes = headerBytes + encode(string: clientId)
@@ -387,8 +387,8 @@ final class LightMQTT {
         let headerBytes: [UInt8] = [
             0x82] +                             // FIXED BYTE 1   8 = SUBSCRIBE, 2 = DUP QoS RETAIN
             remainingLengthBytes +              // FIXED BYTE 2+  remaining length
-        [   messageId.highByte,                 // VARIA BYTE 1   message id MSB
-            messageId.lowByte                   // VARIA BYTE 2   message id LSB
+            [   messageId.highByte,                 // VARIA BYTE 1   message id MSB
+                messageId.lowByte                   // VARIA BYTE 2   message id LSB
         ]
 
         let requestedQosByte: [UInt8] = [
@@ -410,8 +410,8 @@ final class LightMQTT {
         let headerBytes: [UInt8] = [
             0xa2] +                             // FIXED BYTE 1   a = UNSUBSCRIBE, 2 = DUP QoS RETAIN
             remainingLengthBytes +              // FIXED BYTE 2+  remaining length
-        [   messageId.highByte,                 // VARIA BYTE 1   message id MSB
-            messageId.lowByte                   // VARIA BYTE 2   message id LSB
+            [   messageId.highByte,                 // VARIA BYTE 1   message id MSB
+                messageId.lowByte                   // VARIA BYTE 2   message id LSB
         ]
 
         let messageBytes = headerBytes + encode(string: topic)
