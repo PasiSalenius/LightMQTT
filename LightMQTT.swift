@@ -56,6 +56,7 @@ final class LightMQTT {
         var password: String? = nil
         var clientId: String? = nil
         var bufferSize: Int = 4096
+        var readQosClass: DispatchQoS.QoSClass = .background
 
         var concretePort: Int {
             return port ?? (useTLS ? 8883 : 1883)
@@ -160,7 +161,7 @@ final class LightMQTT {
             return nil
         }
 
-        DispatchQueue.global(qos: .background).async {
+        DispatchQueue.global(qos: options.readQosClass).async {
             self.readStream(inputStream: input, outputStream: output)
         }
 
