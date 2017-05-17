@@ -244,6 +244,18 @@ final class LightMQTT {
 
                     byteCount += count
 
+                    if byteCount == options.bufferSize {
+                        let drainBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 1024)
+                        while byteCount < messageLength && inputStream.streamStatus == .open {
+                            let count = inputStream.read(drainBuffer, maxLength: min(1024, messageLength - byteCount))
+                            if count > 0 {
+                                byteCount += count
+                            } else {
+                                break
+                            }
+                        }
+                    }
+
                     if byteCount == messageLength {
                         let topicLength = Int(messageBuffer.pointee) * 256 + Int(messageBuffer.advanced(by: 1).pointee)
                         guard byteCount > topicLength + 2 else {
@@ -343,15 +355,15 @@ final class LightMQTT {
             0x10] +                             // FIXED BYTE 1   1 = CONNECT, 0 = DUP QoS RETAIN, not used in CONNECT
             remainingLengthBytes +              // FIXED BYTE 2+  remaining length
             [0x00,                              // VARIA BYTE 1   length MSB
-                0x04,                               // VARIA BYTE 2   length LSB is 4
-                0x4d,                               // VARIA BYTE 3   M
-                0x51,                               // VARIA BYTE 4   Q
-                0x54,                               // VARIA BYTE 5   T
-                0x54,                               // VARIA BYTE 6   T
-                0x04,                               // VARIA BYTE 7   Version = 4
-                connectFlags,                       // VARIA BYTE 8   Username Password RETAIN QoS Will Clean flags
-                keepalive.highByte,                 // VARIA BYTE 9   Keep Alive MSB
-                keepalive.lowByte                   // VARIA BYTE 10  Keep Alive LSB
+            0x04,                               // VARIA BYTE 2   length LSB is 4
+            0x4d,                               // VARIA BYTE 3   M
+            0x51,                               // VARIA BYTE 4   Q
+            0x54,                               // VARIA BYTE 5   T
+            0x54,                               // VARIA BYTE 6   T
+            0x04,                               // VARIA BYTE 7   Version = 4
+            connectFlags,                       // VARIA BYTE 8   Username Password RETAIN QoS Will Clean flags
+            keepalive.highByte,                 // VARIA BYTE 9   Keep Alive MSB
+            keepalive.lowByte                   // VARIA BYTE 10  Keep Alive LSB
         ]
 
         var messageBytes = headerBytes + encode(string: clientId)
@@ -387,8 +399,8 @@ final class LightMQTT {
         let headerBytes: [UInt8] = [
             0x82] +                             // FIXED BYTE 1   8 = SUBSCRIBE, 2 = DUP QoS RETAIN
             remainingLengthBytes +              // FIXED BYTE 2+  remaining length
-            [   messageId.highByte,                 // VARIA BYTE 1   message id MSB
-                messageId.lowByte                   // VARIA BYTE 2   message id LSB
+        [   messageId.highByte,                 // VARIA BYTE 1   message id MSB
+            messageId.lowByte                   // VARIA BYTE 2   message id LSB
         ]
 
         let requestedQosByte: [UInt8] = [
@@ -410,8 +422,8 @@ final class LightMQTT {
         let headerBytes: [UInt8] = [
             0xa2] +                             // FIXED BYTE 1   a = UNSUBSCRIBE, 2 = DUP QoS RETAIN
             remainingLengthBytes +              // FIXED BYTE 2+  remaining length
-            [   messageId.highByte,                 // VARIA BYTE 1   message id MSB
-                messageId.lowByte                   // VARIA BYTE 2   message id LSB
+        [   messageId.highByte,                 // VARIA BYTE 1   message id MSB
+            messageId.lowByte                   // VARIA BYTE 2   message id LSB
         ]
 
         let messageBytes = headerBytes + encode(string: topic)
