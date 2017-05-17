@@ -135,11 +135,14 @@ final class LightMQTT {
 
     // MARK: - Socket connection
 
-    private func openStreams() -> (inputStream: InputStream, outputStream: OutputStream)? {
+    private func openStreams() -> (input: InputStream, output: OutputStream)? {
         var inputStream: InputStream?
         var outputStream: OutputStream?
 
-        Stream.getStreamsToHost(withName: host, port: options.concretePort, inputStream: &inputStream, outputStream: &outputStream)
+        Stream.getStreamsToHost(withName: host,
+                                port: options.concretePort,
+                                inputStream: &inputStream,
+                                outputStream: &outputStream)
 
         guard let input = inputStream, let output = outputStream else {
             return nil
@@ -162,7 +165,7 @@ final class LightMQTT {
         }
 
         DispatchQueue.global(qos: options.readQosClass).async {
-            self.readStream(inputStream: input, outputStream: output)
+            self.readStream(input: input, output: output)
         }
 
         return (input, output)
@@ -178,7 +181,7 @@ final class LightMQTT {
 
     // MARK: - Stream reading
 
-    private func readStream(inputStream: InputStream, outputStream: OutputStream) {
+    private func readStream(input: InputStream, output: OutputStream) {
         var messageParserState: MQTTMessageParserState = .decodingHeader
         var messageType: MQTTMessage = .connack
 
@@ -193,9 +196,9 @@ final class LightMQTT {
             messageBuffer.deallocate(capacity: options.bufferSize)
         }
 
-        while inputStream.streamStatus == .open {
-            while messageParserState == .decodingHeader && inputStream.streamStatus == .open {
-                let count = inputStream.read(messageBuffer, maxLength: 1)
+        while input.streamStatus == .open {
+            while messageParserState == .decodingHeader && input.streamStatus == .open {
+                let count = input.read(messageBuffer, maxLength: 1)
                 if count == 0 {
                     break
                 } else if count < 0 {
@@ -210,8 +213,8 @@ final class LightMQTT {
                 }
             }
 
-            while messageParserState == .decodingLength && inputStream.streamStatus == .open {
-                let count = inputStream.read(messageBuffer, maxLength: 1)
+            while messageParserState == .decodingLength && input.streamStatus == .open {
+                let count = input.read(messageBuffer, maxLength: 1)
                 if count == 0 {
                     break
                 } else if count < 0 {
@@ -227,7 +230,7 @@ final class LightMQTT {
                 }
             }
 
-            while messageParserState == .decodingData && inputStream.streamStatus == .open {
+            while messageParserState == .decodingData && input.streamStatus == .open {
                 switch messageType {
                 case .publish:
                     guard messageLength > 0 else {
@@ -236,7 +239,7 @@ final class LightMQTT {
                     }
 
                     let bytesToRead = min(options.bufferSize - byteCount, messageLength - byteCount)
-                    let count = inputStream.read(messageBuffer.advanced(by: byteCount), maxLength: bytesToRead)
+                    let count = input.read(messageBuffer.advanced(by: byteCount), maxLength: bytesToRead)
                     if count == 0 {
                         break
                     } else if count < 0 {
@@ -247,8 +250,8 @@ final class LightMQTT {
 
                     if byteCount == options.bufferSize {
                         let drainBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 1024)
-                        while byteCount < messageLength && inputStream.streamStatus == .open {
-                            let count = inputStream.read(drainBuffer, maxLength: min(1024, messageLength - byteCount))
+                        while byteCount < messageLength && input.streamStatus == .open {
+                            let count = input.read(drainBuffer, maxLength: min(1024, messageLength - byteCount))
                             if count > 0 {
                                 byteCount += count
                             } else {
