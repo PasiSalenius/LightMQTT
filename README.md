@@ -22,7 +22,7 @@ Initialize your MQTT client with the MQTT server host address
 
 ```swift
 
-let mqttClient = LightMQTT(host: "10.10.10.10")
+let client = LightMQTT(host: "10.10.10.10")
 
 ```
 
@@ -47,7 +47,7 @@ Set up TCP socket and connect MQTT client to the server with `connect()`. LightM
 
 ```swift
 
-let success = mqttClient.connect()
+let success = client.connect()
 
 ```
 
@@ -55,7 +55,7 @@ Subscribe to a topic that the MQTT server publishes
 
 ```swift
 
-mqttClient.subscribe(to: "/mytopic/#")
+client.subscribe(to: "/mytopic/#")
 
 ```
 
@@ -63,7 +63,7 @@ Unsubscribe from a topic
 
 ```swift
 
-mqttClient.unsubscribe(to: "/mytopic/#")
+client.unsubscribe(to: "/mytopic/#")
 
 ```
 
@@ -71,7 +71,7 @@ Publish messages as Data as follows
 
 ```swift
 
-mqttClient.publish(to: "/mytopic/#", message: someData)
+client.publish(to: "/mytopic/#", message: someData)
 
 ```
 
@@ -79,7 +79,7 @@ One you are done using the client, you should disconnect. Unsubscribing is not n
 
 ```swift
 
-mqttClient.disconnect()
+client.disconnect()
 
 ```
 
@@ -98,7 +98,7 @@ Use one of these closures to read back received MQTT messages. Remember to dispa
 
 ```swift
 
-mqttClient.receivingBuffer = { (topic: String, buffer: UnsafeBufferPointer<UTF8.CodeUnit>) in
+client.receivingBuffer = { (topic: String, buffer: UnsafeBufferPointer<UTF8.CodeUnit>) in
     // parse buffer to JSON here
     
     DispatchQueue.main.async {
