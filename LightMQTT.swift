@@ -71,9 +71,15 @@ final class LightMQTT {
 
     private var messageId: UInt16 = 0
 
+    // MARK: - Public interface
+
     init(host: String, options: Options = Options()) {
         self.host = host
         self.options = options
+    }
+
+    deinit {
+        disconnect()
     }
 
     func connect() -> Bool {
@@ -100,12 +106,6 @@ final class LightMQTT {
         mqttDisconnect()
         closeStreams()
     }
-
-    deinit {
-        disconnect()
-    }
-
-    // MARK: - Public interface
 
     func subscribe(to topic: String) {
         mqttSubscribe(to: topic)
