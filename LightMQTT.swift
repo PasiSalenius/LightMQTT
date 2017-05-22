@@ -61,6 +61,15 @@ final class LightMQTT {
         var concretePort: Int {
             return port ?? (useTLS ? 8883 : 1883)
         }
+
+        fileprivate var concreteClientId:String {
+            var result = clientId ?? "%%%%"
+            while let range = result.range(of: "%") {
+                let hexNibbles = String(format: "%02X", Int(arc4random() & 0xFF))
+                result.replaceSubrange(range, with: hexNibbles)
+            }
+            return result
+        }
     }
 
     private var options: Options
@@ -329,10 +338,7 @@ final class LightMQTT {
      */
 
     private func mqttConnect(keepalive: UInt16) {
-        let baseIntA = Int(arc4random() % 65535)
-        let baseIntB = Int(arc4random() % 65535)
-
-        let clientId = options.clientId ?? String(format: "%04X%04X", baseIntA, baseIntB)
+        let clientId = options.concreteClientId
 
         /**
          * |----------------------------------------------------------------------------------
