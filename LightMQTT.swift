@@ -62,7 +62,7 @@ final class LightMQTT {
             return port ?? (useTLS ? 8883 : 1883)
         }
 
-        fileprivate var concreteClientId:String {
+        fileprivate var concreteClientId: String {
             var result = clientId ?? "%%%%"
             while let range = result.range(of: "%") {
                 let hexNibbles = String(format: "%02X", Int(arc4random() & 0xFF))
@@ -338,14 +338,14 @@ final class LightMQTT {
      */
 
     private func mqttConnect(keepalive: UInt16) {
-        let clientId = options.concreteClientId
-
         /**
          * |----------------------------------------------------------------------------------
          * |     7    |    6     |      5     |  4   3  |     2    |       1      |     0    |
          * | username | password | willretain | willqos | willflag | cleansession | reserved |
          * |----------------------------------------------------------------------------------
          */
+
+        let clientId = options.concreteClientId
 
         var connectFlags: UInt8 = 0b00000010 // clean session
 
