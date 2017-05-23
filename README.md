@@ -26,7 +26,9 @@ let client = LightMQTT(host: "10.10.10.10")
 
 ```
 
-LightMQTT.Options can be used to specify optional client parameters
+LightMQTT.Options can be used to specify optional client parameters.
+
+Any % character in the clientId is converted to a hex byte encoded as two ascii hex characters. This lets you define simple templates for custom clientId strings.
 
 ```swift
 
@@ -35,6 +37,7 @@ options.useTLS = true
 options.port = 8883
 options.username = "myuser"
 options.password = "s3cr3t"
+options.clientId = "myapp_%%%%"
 options.pingInterval = 60
 options.bufferSize = 4096
 options.readQosClass = .background
