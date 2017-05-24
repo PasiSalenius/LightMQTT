@@ -46,11 +46,13 @@ let client = LightMQTT(host: "10.10.10.10", options: options)
 
 ```
 
-Set up TCP socket and connect MQTT client to the server with `connect()`. LightMQTT begins sending ping messages to the server to prevent keepalive timer from expiring.
+Set up TCP socket and connect MQTT client to the server with `connect()`. An optional completion block returns a success flag. LightMQTT begins sending ping messages to the server to prevent keepalive timer from expiring.
 
 ```swift
 
-let success = client.connect()
+client.connect() { success in
+    // use the client to subscribe to topics here
+}
 
 ```
 
