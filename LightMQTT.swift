@@ -91,60 +91,73 @@ final class LightMQTT {
         disconnect()
     }
 
-    func connect() -> Bool {
-        if inputStream != nil || outputStream != nil {
-            return false
+    func connect(completion: ((_ success: Bool) -> ())? = nil) {
+        disconnect()
+
+        openStreams() { streams in
+            guard let streams = streams else {
+                completion?(false)
+                return
+            }
+
+            self.inputStream = streams.input
+            self.outputStream = streams.output
+
+            DispatchQueue.global(qos: self.options.readQosClass).async {
+                self.readStream(input: streams.input, output: streams.output)
+            }
+
+            self.mqttConnect(output: streams.output, keepalive: self.options.pingInterval)
+            self.delayedPing(output: streams.output, interval: self.options.pingInterval)
+
+            self.messageId = 0
+
+            completion?(true)
         }
-
-        guard let (input, output) = openStreams() else {
-            return false
-        }
-
-        inputStream = input
-        outputStream = output
-
-        mqttConnect(keepalive: options.pingInterval)
-        delayedPing(outputStream: output, interval: options.pingInterval)
-
-        messageId = 0
-
-        return true
     }
 
     func disconnect() {
-        mqttDisconnect()
-        closeStreams()
+        if let output = outputStream {
+            mqttDisconnect(output: output)
+            closeStreams()
+        }
     }
 
     func subscribe(to topic: String) {
-        mqttSubscribe(to: topic)
+        if let output = outputStream {
+            mqttSubscribe(output: output, to: topic)
+        }
     }
 
     func unsubscribe(from topic: String) {
-        mqttUnsubscribe(from: topic)
+        if let output = outputStream {
+            mqttUnsubscribe(output: output, from: topic)
+        }
     }
 
     func publish(to topic: String, message: Data?) {
-        mqttPublish(topic: topic, message: message ?? Data())
+        if let output = outputStream {
+            mqttPublish(output: output, topic: topic, message: message ?? Data())
+        }
     }
 
     // MARK: - Keep alive timer
 
-    private func delayedPing(outputStream: OutputStream, interval: UInt16) {
+    private func delayedPing(output: OutputStream, interval: UInt16) {
         let time = DispatchTime.now() + Double(interval / 2)
         DispatchQueue.main.asyncAfter(deadline: time) { [weak self] in
-            if outputStream.streamStatus != .open {
+            if output.streamStatus != .open {
                 return
             }
 
-            self?.mqttPing(outputStream: outputStream)
-            self?.delayedPing(outputStream: outputStream, interval: interval)
+            self?.mqttPing(output: output)
+            self?.delayedPing(output: output, interval: interval)
         }
     }
 
     // MARK: - Socket connection
 
-    private func openStreams() -> (input: InputStream, output: OutputStream)? {
+    private func openStreams(completion: @escaping (((input: InputStream, output: OutputStream)?) -> ())) {
         var inputStream: InputStream?
         var outputStream: OutputStream?
 
@@ -154,7 +167,8 @@ final class LightMQTT {
                                 outputStream: &outputStream)
 
         guard let input = inputStream, let output = outputStream else {
-            return nil
+            completion(nil)
+            return
         }
 
         if options.useTLS {
@@ -162,22 +176,20 @@ final class LightMQTT {
             output.setProperty(StreamSocketSecurityLevel.tlSv1, forKey: .socketSecurityLevelKey)
         }
 
-        input.open()
-        output.open()
+        DispatchQueue.global(qos: .userInitiated).async {
+            input.open()
+            output.open()
 
-        while input.streamStatus == .opening || output.streamStatus == .opening {
-            usleep(1000)
+            while input.streamStatus == .opening || output.streamStatus == .opening {
+                usleep(1000)
+            }
+
+            if input.streamStatus != .open || output.streamStatus != .open {
+                completion(nil)
+            }
+            
+            completion((input, output))
         }
-
-        if input.streamStatus != .open || output.streamStatus != .open {
-            return nil
-        }
-
-        DispatchQueue.global(qos: options.readQosClass).async {
-            self.readStream(input: input, output: output)
-        }
-
-        return (input, output)
     }
 
     private func closeStreams() {
@@ -267,7 +279,7 @@ final class LightMQTT {
                                 break
                             }
                         }
-                        
+
                         messageParserState = .decodingHeader
                         break
                     }
@@ -337,7 +349,7 @@ final class LightMQTT {
      * |--------------------------------------
      */
 
-    private func mqttConnect(keepalive: UInt16) {
+    private func mqttConnect(output: OutputStream, keepalive: UInt16) {
         /**
          * |----------------------------------------------------------------------------------
          * |     7    |    6     |      5     |  4   3  |     2    |       1      |     0    |
@@ -367,7 +379,7 @@ final class LightMQTT {
         let headerBytes: [UInt8] = [
             0x10] +                             // FIXED BYTE 1   1 = CONNECT, 0 = DUP QoS RETAIN, not used in CONNECT
             remainingLengthBytes +              // FIXED BYTE 2+  remaining length
-            [0x00,                              // VARIA BYTE 1   length MSB
+        [   0x00,                               // VARIA BYTE 1   length MSB
             0x04,                               // VARIA BYTE 2   length LSB is 4
             0x4d,                               // VARIA BYTE 3   M
             0x51,                               // VARIA BYTE 4   Q
@@ -389,19 +401,19 @@ final class LightMQTT {
             messageBytes += encode(string: password)
         }
 
-        outputStream?.write(messageBytes, maxLength: messageBytes.count)
+        output.write(messageBytes, maxLength: messageBytes.count)
     }
 
-    private func mqttDisconnect() {
+    private func mqttDisconnect(output: OutputStream) {
         let messageBytes: [UInt8] = [
             0xe0,                               // FIXED BYTE 1   e = DISCONNECT, 0 = DUP QoS RETAIN (not used)
             0x00                                // FIXED BYTE 2   remaining length = 0
         ]
 
-        outputStream?.write(messageBytes, maxLength: messageBytes.count)
+        output.write(messageBytes, maxLength: messageBytes.count)
     }
 
-    private func mqttSubscribe(to topic: String) {
+    private func mqttSubscribe(output: OutputStream, to topic: String) {
         messageId += 1
 
         var remainingLength: Int = 3 // initial 3 bytes (messageID and QoS)
@@ -421,10 +433,10 @@ final class LightMQTT {
         ]
 
         let messageBytes = headerBytes + encode(string: topic) + requestedQosByte
-        outputStream?.write(messageBytes, maxLength: messageBytes.count)
+        output.write(messageBytes, maxLength: messageBytes.count)
     }
 
-    private func mqttUnsubscribe(from topic: String) {
+    private func mqttUnsubscribe(output: OutputStream, from topic: String) {
         messageId += 1
 
         var remainingLength: Int = 2 // initial 2 bytes (messageID)
@@ -440,11 +452,11 @@ final class LightMQTT {
         ]
 
         let messageBytes = headerBytes + encode(string: topic)
-        outputStream?.write(messageBytes, maxLength: messageBytes.count)
+        output.write(messageBytes, maxLength: messageBytes.count)
     }
 
     // MQTT publish only handles QOS 0 for now
-    private func mqttPublish(topic: String, message: Data) {
+    private func mqttPublish(output: OutputStream, topic: String, message: Data) {
         messageId += 1
 
         // TODO: Add 2 (for messageId) if/when QOS > 0
@@ -455,16 +467,16 @@ final class LightMQTT {
         remainingLengthBytes                    // remaining length, variable
 
         let messageBytes = headerBytes + encode(string: topic) + [UInt8](message)
-        outputStream?.write(messageBytes, maxLength: messageBytes.count)
+        output.write(messageBytes, maxLength: messageBytes.count)
     }
 
-    @objc private func mqttPing(outputStream: OutputStream) {
+    @objc private func mqttPing(output: OutputStream) {
         let messageBytes: [UInt8] = [
             0xc0,                               // FIXED BYTE 1   c = PINGREQ, 0 = DUP QoS RETAIN (not used)
             0x00                                // FIXED BYTE 2   remaining length = 0
         ]
         
-        outputStream.write(messageBytes, maxLength: messageBytes.count)
+        output.write(messageBytes, maxLength: messageBytes.count)
     }
     
     // MARK: - Utils
