@@ -92,13 +92,13 @@ final class LightMQTT {
     }
 
     func connect(completion: ((_ success: Bool) -> ())? = nil) {
-        disconnect()
-
         openStreams() { streams in
             guard let streams = streams else {
                 completion?(false)
                 return
             }
+
+            self.disconnect()
 
             self.inputStream = streams.input
             self.outputStream = streams.output
