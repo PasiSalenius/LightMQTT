@@ -92,25 +92,25 @@ final class LightMQTT {
     }
 
     func connect(completion: ((_ success: Bool) -> ())? = nil) {
-        openStreams() { streams in
-            guard let streams = streams else {
+        openStreams() { [weak self] streams in
+            guard let strongSelf = self, let streams = streams else {
                 completion?(false)
                 return
             }
 
-            self.disconnect()
+            strongSelf.disconnect()
 
-            self.inputStream = streams.input
-            self.outputStream = streams.output
+            strongSelf.inputStream = streams.input
+            strongSelf.outputStream = streams.output
 
-            DispatchQueue.global(qos: self.options.readQosClass).async {
-                self.readStream(input: streams.input, output: streams.output)
+            DispatchQueue.global(qos: strongSelf.options.readQosClass).async {
+                strongSelf.readStream(input: streams.input, output: streams.output)
             }
 
-            self.mqttConnect(output: streams.output, keepalive: self.options.pingInterval)
-            self.delayedPing(output: streams.output, interval: self.options.pingInterval)
+            strongSelf.mqttConnect(output: streams.output, keepalive: strongSelf.options.pingInterval)
+            strongSelf.delayedPing(output: streams.output, interval: strongSelf.options.pingInterval)
 
-            self.messageId = 0
+            strongSelf.messageId = 0
 
             completion?(true)
         }
