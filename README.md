@@ -30,7 +30,7 @@ LightMQTT.Options can be used to specify optional client parameters.
 
 Any % character in the clientId is converted to a hex byte encoded as two ascii hex characters. This lets you define simple templates for custom clientId strings.
 
-Note that currently LightMQTT uses a static buffer for received message bytes and its size is defined by `bufferSize` which defaults to 4096. Configure a large enough buffer for your use case, as messages over the buffer's size get silently discarded and parsing continues from the next message. Having this single read buffer greatly increases performance.
+Note that currently LightMQTT uses a static buffer for received message bytes. Its size is defined with `bufferSize` defaulting to 4096. Configure a large enough buffer for your use case, as messages larger than the buffer get silently discarded. Having this single read buffer greatly increases performance.
 
 ```swift
 
