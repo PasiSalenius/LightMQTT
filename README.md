@@ -46,21 +46,16 @@ let client = LightMQTT(host: "10.10.10.10", options: options)
 
 ```
 
-Set up TCP socket and connect MQTT client to the server with `connect()`. An optional completion block returns a success flag. LightMQTT begins sending ping messages to the server to prevent keepalive timer from expiring.
+Set up TCP socket and connect MQTT client to the server with `connect()`. Connecting is asynchronous so subscribe to topics only once the connection is ready, in the completion block. The block returns a `success` flag indicating if the client established a connection or not.
 
 ```swift
 
 client.connect() { success in
-    // use the client to subscribe to topics here
+    if success {
+        // use the client to subscribe to topics here
+        client.subscribe(to: "/mytopic/#")
+    }
 }
-
-```
-
-Subscribe to a topic that the MQTT server publishes
-
-```swift
-
-client.subscribe(to: "/mytopic/#")
 
 ```
 
