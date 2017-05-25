@@ -186,6 +186,7 @@ final class LightMQTT {
 
             if input.streamStatus != .open || output.streamStatus != .open {
                 completion(nil)
+                return
             }
             
             completion((input, output))
