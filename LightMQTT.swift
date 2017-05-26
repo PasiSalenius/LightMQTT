@@ -418,7 +418,7 @@ final class LightMQTT {
         send(packet: packet)
     }
 
-    @objc private func mqttPing() {
+    private func mqttPing() {
         // http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718081
 
         let packet = ControlPacket(type: .pingreq)
