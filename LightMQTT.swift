@@ -4,34 +4,37 @@
 
 import Foundation
 
-extension UInt16 {
-    var lowByte: UInt8 {
-        return UInt8(self & 0x00FF)
-    }
 
-    var highByte: UInt8 {
-        return UInt8((self & 0xFF00) >> 8)
-    }
+fileprivate enum PacketType: UInt8 {
+    // http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718021
+    case connect =     0x10
+    case connack =     0x20
+    case publish =     0x30
+    case puback =      0x40
+    case pubrec =      0x50
+    case pubrel =      0x60
+    case pubcomp =     0x70
+    case subscribe =   0x80
+    case suback =      0x90
+    case unsubscribe = 0xa0
+    case unsuback =    0xb0
+    case pingreq =     0xc0
+    case pingresp =    0xd0
+    case disconnect =  0xe0
 }
 
-final class LightMQTT {
 
-    enum MQTTMessage: UInt8 {
-        case connect = 0x10
-        case connack = 0x20
-        case publish = 0x30
-        case puback = 0x40
-        case pubrec = 0x50
-        case pubrel = 0x60
-        case pubcomp = 0x70
-        case subscribe = 0x80
-        case suback = 0x90
-        case unsubscribe = 0xa0
-        case unsuback = 0xb0
-        case pingreq = 0xc0
-        case pingresp = 0xd0
-        case disconnect = 0xe0
-    }
+fileprivate enum PacketFlags: UInt8 {
+    // http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718022
+    case dup =           0b0000_1000
+    case mostOnce =      0b0000_0000
+    case leastOnce =     0b0000_0010
+    case justOnce =      0b0000_0100
+    case retain =        0b0000_0001
+}
+
+
+final class LightMQTT {
 
     enum MQTTMessageParserState {
         case decodingHeader
@@ -77,6 +80,7 @@ final class LightMQTT {
 
     private var inputStream: InputStream?
     private var outputStream: OutputStream?
+    private var writeQueue = DispatchQueue(label: "mqtt_write")
 
     private var messageId: UInt16 = 0
 
@@ -107,8 +111,8 @@ final class LightMQTT {
                 strongSelf.readStream(input: streams.input, output: streams.output)
             }
 
-            strongSelf.mqttConnect(output: streams.output, keepalive: strongSelf.options.pingInterval)
-            strongSelf.delayedPing(output: streams.output, interval: strongSelf.options.pingInterval)
+            strongSelf.mqttConnect()
+            strongSelf.delayedPing()
 
             strongSelf.messageId = 0
 
@@ -117,41 +121,37 @@ final class LightMQTT {
     }
 
     func disconnect() {
-        if let output = outputStream {
-            mqttDisconnect(output: output)
-            closeStreams()
-        }
+        mqttDisconnect()
+        closeStreams()
     }
 
     func subscribe(to topic: String) {
-        if let output = outputStream {
-            mqttSubscribe(output: output, to: topic)
-        }
+        mqttSubscribe(to: topic)
     }
 
     func unsubscribe(from topic: String) {
-        if let output = outputStream {
-            mqttUnsubscribe(output: output, from: topic)
-        }
+        mqttUnsubscribe(from: topic)
     }
 
     func publish(to topic: String, message: Data?) {
-        if let output = outputStream {
-            mqttPublish(output: output, topic: topic, message: message ?? Data())
-        }
+        mqttPublish(to: topic, message: message ?? Data())
     }
 
     // MARK: - Keep alive timer
 
-    private func delayedPing(output: OutputStream, interval: UInt16) {
+    private func delayedPing() {
+        let interval = options.pingInterval
         let time = DispatchTime.now() + Double(interval / 2)
         DispatchQueue.main.asyncAfter(deadline: time) { [weak self] in
-            if output.streamStatus != .open {
-                return
+            if let output = self?.outputStream, output.streamStatus == .open {
+                // pass, ok to keep going
             }
+            else {
+                return // recursion stopper
+            } 
 
-            self?.mqttPing(output: output)
-            self?.delayedPing(output: output, interval: interval)
+            self?.mqttPing()
+            self?.delayedPing()
         }
     }
 
@@ -205,7 +205,7 @@ final class LightMQTT {
 
     private func readStream(input: InputStream, output: OutputStream) {
         var messageParserState: MQTTMessageParserState = .decodingHeader
-        var messageType: MQTTMessage = .connack
+        var messageType: PacketType = .connack
 
         var messageLengthMultiplier = 1
         var messageLength = 0
@@ -227,7 +227,7 @@ final class LightMQTT {
                     return
                 }
 
-                if let message = MQTTMessage(rawValue: messageBuffer.pointee & 0xf0) {
+                if let message = PacketType(rawValue: messageBuffer.pointee & 0xf0) {
                     messageType = message
                     messageParserState = .decodingLength
                     messageLengthMultiplier = 1
@@ -341,6 +341,11 @@ final class LightMQTT {
         }
     }
 
+    private func nextMessageId() -> UInt16 {
+        messageId = messageId &+ 1
+        return messageId
+    }
+
     // MARK: - MQTT messages
 
     /**
@@ -350,158 +355,166 @@ final class LightMQTT {
      * |--------------------------------------
      */
 
-    private func mqttConnect(output: OutputStream, keepalive: UInt16) {
-        /**
-         * |----------------------------------------------------------------------------------
-         * |     7    |    6     |      5     |  4   3  |     2    |       1      |     0    |
-         * | username | password | willretain | willqos | willflag | cleansession | reserved |
-         * |----------------------------------------------------------------------------------
-         */
+    private func mqttConnect() {
+        // http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718028
 
-        let clientId = options.concreteClientId
+        var packet = ControlPacket(type: .connect)
+        packet.payload += options.concreteClientId
 
+        // section 3.1.2.3
         var connectFlags: UInt8 = 0b00000010 // clean session
-
-        var remainingLength: Int = 10 // initial 10 bytes
-        remainingLength += (2 + clientId.utf8.count) // 2 byte client id length + codepoints
 
         if let username = options.username {
             connectFlags |= 0b10000000
-            remainingLength += (2 + username.utf8.count) // 2 byte username length + codepoints
+            packet.payload += username
+            
         }
 
         if let password = options.password {
             connectFlags |= 0b01000000
-            remainingLength += (2 + password.utf8.count) // 2 byte password length + codepoints
+            packet.payload += password
         }
 
-        let remainingLengthBytes = encodeVariableLength(remainingLength)
+        packet.variableHeader += "MQTT"            // section 3.1.2.1
+        packet.variableHeader += UInt8(0b00000100) // section 3.1.2.2
+        packet.variableHeader += connectFlags
+        packet.variableHeader += options.pingInterval // section 3.1.2.10
 
-        let headerBytes: [UInt8] = [
-            0x10] +                             // FIXED BYTE 1   1 = CONNECT, 0 = DUP QoS RETAIN, not used in CONNECT
-            remainingLengthBytes +              // FIXED BYTE 2+  remaining length
-        [   0x00,                               // VARIA BYTE 1   length MSB
-            0x04,                               // VARIA BYTE 2   length LSB is 4
-            0x4d,                               // VARIA BYTE 3   M
-            0x51,                               // VARIA BYTE 4   Q
-            0x54,                               // VARIA BYTE 5   T
-            0x54,                               // VARIA BYTE 6   T
-            0x04,                               // VARIA BYTE 7   Version = 4
-            connectFlags,                       // VARIA BYTE 8   Username Password RETAIN QoS Will Clean flags
-            keepalive.highByte,                 // VARIA BYTE 9   Keep Alive MSB
-            keepalive.lowByte                   // VARIA BYTE 10  Keep Alive LSB
-        ]
-
-        var messageBytes = headerBytes + encode(string: clientId)
-
-        if let username = options.username {
-            messageBytes += encode(string: username)
-        }
-
-        if let password = options.password {
-            messageBytes += encode(string: password)
-        }
-
-        output.write(messageBytes, maxLength: messageBytes.count)
+        send(packet: packet)
     }
 
-    private func mqttDisconnect(output: OutputStream) {
-        let messageBytes: [UInt8] = [
-            0xe0,                               // FIXED BYTE 1   e = DISCONNECT, 0 = DUP QoS RETAIN (not used)
-            0x00                                // FIXED BYTE 2   remaining length = 0
-        ]
+    private func mqttDisconnect() {
+        // http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718090
 
-        output.write(messageBytes, maxLength: messageBytes.count)
+        let packet = ControlPacket(type: .disconnect)
+
+        send(packet: packet)
     }
 
-    private func mqttSubscribe(output: OutputStream, to topic: String) {
-        messageId += 1
+    private func mqttSubscribe(to topic: String) {
+        // http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718063
 
-        var remainingLength: Int = 3 // initial 3 bytes (messageID and QoS)
-        remainingLength += (2 + topic.utf8.count) // 2 byte topic length + codepoints
+        var packet = ControlPacket(type: .subscribe, flags: .leastOnce)
+        packet.variableHeader += nextMessageId()
+        packet.payload += topic    // section 3.8.3
+        packet.payload += UInt8(0) // QoS = 0
 
-        let remainingLengthBytes = encodeVariableLength(remainingLength)
-
-        let headerBytes: [UInt8] = [
-            0x82] +                             // FIXED BYTE 1   8 = SUBSCRIBE, 2 = DUP QoS RETAIN
-            remainingLengthBytes +              // FIXED BYTE 2+  remaining length
-        [   messageId.highByte,                 // VARIA BYTE 1   message id MSB
-            messageId.lowByte                   // VARIA BYTE 2   message id LSB
-        ]
-
-        let requestedQosByte: [UInt8] = [
-            0x00                                // Requested QoS
-        ]
-
-        let messageBytes = headerBytes + encode(string: topic) + requestedQosByte
-        output.write(messageBytes, maxLength: messageBytes.count)
+        send(packet: packet)
     }
 
-    private func mqttUnsubscribe(output: OutputStream, from topic: String) {
-        messageId += 1
+    private func mqttUnsubscribe(from topic: String) {
+        // http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718072
 
-        var remainingLength: Int = 2 // initial 2 bytes (messageID)
-        remainingLength += (2 + topic.utf8.count) // 2 byte topic length + codepoints
+        var packet = ControlPacket(type: .unsubscribe, flags: .leastOnce)
+        packet.variableHeader += nextMessageId()
+        packet.payload += topic
 
-        let remainingLengthBytes = encodeVariableLength(remainingLength)
-
-        let headerBytes: [UInt8] = [
-            0xa2] +                             // FIXED BYTE 1   a = UNSUBSCRIBE, 2 = DUP QoS RETAIN
-            remainingLengthBytes +              // FIXED BYTE 2+  remaining length
-        [   messageId.highByte,                 // VARIA BYTE 1   message id MSB
-            messageId.lowByte                   // VARIA BYTE 2   message id LSB
-        ]
-
-        let messageBytes = headerBytes + encode(string: topic)
-        output.write(messageBytes, maxLength: messageBytes.count)
+        send(packet: packet)
     }
 
     // MQTT publish only handles QOS 0 for now
-    private func mqttPublish(output: OutputStream, topic: String, message: Data) {
-        messageId += 1
+    private func mqttPublish(to topic: String, message: Data) {
+        // http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718037
 
+        var packet = ControlPacket(type: .publish, flags: .mostOnce)
+        packet.variableHeader += topic // section 3.3.2
         // TODO: Add 2 (for messageId) if/when QOS > 0
-        let remainingLengthBytes = encodeVariableLength(2 + topic.utf8.count + message.count)
+        packet.payload += message      // section 3.3.3
 
-        let headerBytes: [UInt8] = [
-            0x30] +                             // FIXED BYTE 1   3 = PUBLISH, 0 = DUP QoS RETAIN
-        remainingLengthBytes                    // remaining length, variable
-
-        let messageBytes = headerBytes + encode(string: topic) + [UInt8](message)
-        output.write(messageBytes, maxLength: messageBytes.count)
+        send(packet: packet)
     }
 
-    @objc private func mqttPing(output: OutputStream) {
-        let messageBytes: [UInt8] = [
-            0xc0,                               // FIXED BYTE 1   c = PINGREQ, 0 = DUP QoS RETAIN (not used)
-            0x00                                // FIXED BYTE 2   remaining length = 0
-        ]
+    @objc private func mqttPing() {
+        // http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718081
+
+        let packet = ControlPacket(type: .pingreq)
         
-        output.write(messageBytes, maxLength: messageBytes.count)
+        send(packet: packet)
     }
-    
-    // MARK: - Utils
-    
-    private func encodeVariableLength(_ length: Int) -> [UInt8] {
-        var remainingBytes: [UInt8] = []
-        var workingLength = UInt(length)
+
+    private func send(packet:ControlPacket) {
+        guard let output = outputStream else { return } 
+
+        let serialized = packet.encoded
+        var toSend = serialized.count
+        var sent = 0
+
+        writeQueue.sync {
+            while toSend > 0 {
+                let thisSend = serialized.withUnsafeBytes {
+                    output.write($0.advanced(by: sent), maxLength: toSend)
+                }
+                if thisSend < 0 {
+                    // print the output.error?
+                    return
+                }
+                toSend -= thisSend
+                sent += thisSend
+            }
+        }
+    }
+}
+
+
+fileprivate struct AppendableData {
+    var data = Data()
+
+    static func += (block: inout AppendableData, byte:UInt8) {
+        block.data.append(byte)
+    }
+
+    static func += (block: inout AppendableData, short:UInt16) {
+        block += UInt8(short >> 8)
+        block += UInt8(short & 0xFF)
+    }
+
+    static func += (block: inout AppendableData, data:Data) {
+        block.data += data
+    }
+
+    static func += (block: inout AppendableData, string:String) {
+        block += UInt16(string.utf8.count)
+        block += string.data(using: .utf8)!
+    }
+}
+
+
+fileprivate struct ControlPacket {
+    var type: PacketType
+    var flags: PacketFlags
+    var variableHeader = AppendableData()
+    var payload = AppendableData()
+
+    var remainingLength:Data {
+        // http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718023
+        var workingLength = UInt(variableHeader.data.count + payload.data.count)
+        var encoded = Data()
         
-        while workingLength > 0 {
+        while true {
             var byte = UInt8(workingLength & 0x7F)
             workingLength >>= 7
             if workingLength > 0 {
                 byte |= 0x80
             }
-            remainingBytes.append(byte)
+            encoded.append(byte)
+            if workingLength == 0 {
+                return encoded
+            }
         }
-        
-        return remainingBytes
+    } 
+
+    var encoded:Data {
+        var bytes = Data()
+        bytes.append(type.rawValue | flags.rawValue)
+        bytes += remainingLength
+        bytes += variableHeader.data
+        bytes += payload.data
+        return bytes
     }
-    
-    private func encode(string: String) -> [UInt8] {
-        // http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718016
-        let encoded = string.utf8
-        return [UInt16(encoded.count).highByte, UInt16(encoded.count).lowByte] + [UInt8](encoded)
+
+    init(type: PacketType, flags: PacketFlags = .mostOnce) {
+        self.type = type
+        self.flags = flags
     }
-    
+
 }
