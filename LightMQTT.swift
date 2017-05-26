@@ -4,7 +4,6 @@
 
 import Foundation
 
-
 fileprivate enum PacketType: UInt8 {
     // http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718021
     case connect =     0x10
@@ -23,7 +22,6 @@ fileprivate enum PacketType: UInt8 {
     case disconnect =  0xe0
 }
 
-
 fileprivate enum PacketFlags: UInt8 {
     // http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718022
     case dup =           0b0000_1000
@@ -32,7 +30,6 @@ fileprivate enum PacketFlags: UInt8 {
     case justOnce =      0b0000_0100
     case retain =        0b0000_0001
 }
-
 
 final class LightMQTT {
 
@@ -143,11 +140,9 @@ final class LightMQTT {
         let interval = options.pingInterval
         let time = DispatchTime.now() + Double(interval / 2)
         DispatchQueue.main.asyncAfter(deadline: time) { [weak self] in
-            if let output = self?.outputStream, output.streamStatus == .open {
-                // pass, ok to keep going
-            }
-            else {
-                return // recursion stopper
+            // stop pinging server if client deallocated or stream closed
+            guard let output = self?.outputStream, output.streamStatus == .open else {
+                return
             } 
 
             self?.mqttPing()
@@ -367,7 +362,6 @@ final class LightMQTT {
         if let username = options.username {
             connectFlags |= 0b10000000
             packet.payload += username
-            
         }
 
         if let password = options.password {
@@ -432,7 +426,7 @@ final class LightMQTT {
         send(packet: packet)
     }
 
-    private func send(packet:ControlPacket) {
+    private func send(packet: ControlPacket) {
         guard let output = outputStream else { return } 
 
         let serialized = packet.encoded
@@ -441,43 +435,41 @@ final class LightMQTT {
 
         writeQueue.sync {
             while toSend > 0 {
-                let thisSend = serialized.withUnsafeBytes {
+                let count = serialized.withUnsafeBytes {
                     output.write($0.advanced(by: sent), maxLength: toSend)
                 }
-                if thisSend < 0 {
+                if count < 0 {
                     // print the output.error?
                     return
                 }
-                toSend -= thisSend
-                sent += thisSend
+                toSend -= count
+                sent += count
             }
         }
     }
 }
 
-
 fileprivate struct AppendableData {
     var data = Data()
 
-    static func += (block: inout AppendableData, byte:UInt8) {
+    static func += (block: inout AppendableData, byte: UInt8) {
         block.data.append(byte)
     }
 
-    static func += (block: inout AppendableData, short:UInt16) {
+    static func += (block: inout AppendableData, short: UInt16) {
         block += UInt8(short >> 8)
         block += UInt8(short & 0xFF)
     }
 
-    static func += (block: inout AppendableData, data:Data) {
+    static func += (block: inout AppendableData, data: Data) {
         block.data += data
     }
 
-    static func += (block: inout AppendableData, string:String) {
+    static func += (block: inout AppendableData, string: String) {
         block += UInt16(string.utf8.count)
         block += string.data(using: .utf8)!
     }
 }
-
 
 fileprivate struct ControlPacket {
     var type: PacketType
@@ -485,7 +477,7 @@ fileprivate struct ControlPacket {
     var variableHeader = AppendableData()
     var payload = AppendableData()
 
-    var remainingLength:Data {
+    var remainingLength: Data {
         // http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718023
         var workingLength = UInt(variableHeader.data.count + payload.data.count)
         var encoded = Data()
@@ -503,7 +495,7 @@ fileprivate struct ControlPacket {
         }
     } 
 
-    var encoded:Data {
+    var encoded: Data {
         var bytes = Data()
         bytes.append(type.rawValue | flags.rawValue)
         bytes += remainingLength
@@ -516,5 +508,4 @@ fileprivate struct ControlPacket {
         self.type = type
         self.flags = flags
     }
-
 }
