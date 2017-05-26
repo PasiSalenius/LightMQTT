@@ -24,11 +24,11 @@ fileprivate enum PacketType: UInt8 {
 
 fileprivate enum PacketFlags: UInt8 {
     // http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718022
-    case dup =           0b0000_1000
     case mostOnce =      0b0000_0000
+    case retain =        0b0000_0001
     case leastOnce =     0b0000_0010
     case justOnce =      0b0000_0100
-    case retain =        0b0000_0001
+    case dup =           0b0000_1000
 }
 
 final class LightMQTT {
