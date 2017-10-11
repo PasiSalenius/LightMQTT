@@ -57,7 +57,12 @@ final class LightMQTT {
         var clientId: String? = nil
         var bufferSize: Int = 4096
         var readQosClass: DispatchQoS.QoSClass = .background
-
+        //Will Topic Config Start
+        var willQos: Int? = nil
+        var willTopic: String? = nil
+        var willRetain: Bool? = false
+        var willPayload: String? = nil
+        //Will Topic Config End
         var concretePort: Int {
             return port ?? (useTLS ? 8883 : 1883)
         }
@@ -143,7 +148,7 @@ final class LightMQTT {
             // stop pinging server if client deallocated or stream closed
             guard let output = self?.outputStream, output.streamStatus == .open else {
                 return
-            } 
+            }
 
             self?.mqttPing()
             self?.delayedPing()
@@ -183,7 +188,7 @@ final class LightMQTT {
                 completion(nil)
                 return
             }
-            
+
             completion((input, output))
         }
     }
@@ -368,7 +373,40 @@ final class LightMQTT {
             connectFlags |= 0b01000000
             packet.payload += password
         }
-
+        //setting up Last Will configuration
+        if let willTopic = options.willTopic {
+            //setting the Will Flag
+            connectFlags |= 0b00000100
+            //setting Will Topic
+            packet.payload += willTopic
+        }
+        //setting Will Message
+        if let willPayload = options.willPayload {
+            packet.payload += willPayload
+        }
+        //setting Will RetainMessage
+        if let willRetain = options.willRetain {
+            if willRetain {
+                connectFlags |= 0b00100000
+            }else{
+                connectFlags |= 0b00000000
+            }
+        }
+        if let willQos = options.willQos {
+            switch willQos{
+                case 0://setting the Will QoS 0
+                    connectFlags |= 0b00000000
+                case 1://setting the Will QoS 1
+                    connectFlags |= 0b00001000
+                case 2 ://setting the Will QoS 2
+                    connectFlags |= UInt8(2);
+                    //connectFlags |= 0b00002000;
+                default:
+                    connectFlags |= 0b00000000
+            }
+            //setting the Will QoS. Testing with QoS 0
+            connectFlags |= 0b00000000
+        }
         packet.variableHeader += "MQTT"            // section 3.1.2.1
         packet.variableHeader += UInt8(0b00000100) // section 3.1.2.2
         packet.variableHeader += connectFlags
@@ -422,12 +460,12 @@ final class LightMQTT {
         // http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718081
 
         let packet = ControlPacket(type: .pingreq)
-        
+
         send(packet: packet)
     }
 
     private func send(packet: ControlPacket) {
-        guard let output = outputStream else { return } 
+        guard let output = outputStream else { return }
 
         let serialized = packet.encoded
         var toSend = serialized.count
@@ -481,7 +519,7 @@ fileprivate struct ControlPacket {
         // http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718023
         var workingLength = UInt(variableHeader.data.count + payload.data.count)
         var encoded = Data()
-        
+
         while true {
             var byte = UInt8(workingLength & 0x7F)
             workingLength >>= 7
@@ -493,7 +531,7 @@ fileprivate struct ControlPacket {
                 return encoded
             }
         }
-    } 
+    }
 
     var encoded: Data {
         var bytes = Data()
