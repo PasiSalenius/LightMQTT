@@ -207,7 +207,7 @@ final class LightMQTT {
 
         defer {
             messageBuffer.deinitialize(count: options.bufferSize)
-            messageBuffer.deallocate(capacity: options.bufferSize)
+            messageBuffer.deallocate()
         }
 
         while input.streamStatus == .open {
