@@ -32,7 +32,8 @@ LightMQTT.Options can be used to specify optional client parameters.
 
 var options = LightMQTT.Options()
 options.useTLS = true
-options.port = 8883
+options.securityLevel = .tlSv1
+options.networkServiceType = .background
 options.username = "myuser"
 options.password = "s3cr3t"
 options.clientId = "myapp_%%%%"
