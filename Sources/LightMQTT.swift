@@ -155,9 +155,8 @@ final class LightMQTT {
     // MARK: - Keep alive timer
     
     private func delayedPing() {
-        let interval = options.pingInterval
-        let time = DispatchTime.now() + Double(interval / 2)
-        DispatchQueue.global(qos: .default).asyncAfter(deadline: time) { [weak self] in
+        let deadline = DispatchTime.now() + .seconds(Int(options.pingInterval / 2))
+        DispatchQueue.global(qos: .default).asyncAfter(deadline: deadline) { [weak self] in
             // stop pinging server if client deallocated or stream closed
             guard let output = self?.outputStream, output.isConnected else {
                 return
