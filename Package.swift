@@ -16,6 +16,6 @@ let package = Package(
             name: "LightMQTT",
             dependencies: [],
             path: "Sources"
-            ),
+        ),
     ]
 )
