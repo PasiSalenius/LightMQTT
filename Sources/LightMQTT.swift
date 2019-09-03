@@ -460,8 +460,11 @@ final class LightMQTT {
                     return
                 }
                 
-                let count = serialized.withUnsafeBytes {
-                    output.write($0.advanced(by: sent), maxLength: toSend)
+                let count: Int = serialized.withUnsafeBytes {
+                    guard let bytes = $0.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                        return 0
+                    }
+                    return output.write(bytes.advanced(by: sent), maxLength: toSend)
                 }
                 if count == 0 {
                     usleep(1000)
