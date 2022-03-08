@@ -31,32 +31,32 @@ fileprivate enum PacketFlags: UInt8 {
     case retain =        0b0000_0001
 }
 
-final class LightMQTT {
+public final class LightMQTT {
     
-    enum MQTTMessageParserState {
+    public enum MQTTMessageParserState {
         case decodingHeader
         case decodingLength
         case decodingData
     }
     
-    var receivingMessage: ((_ topic: String, _ message: String) -> ())?
-    var receivingBuffer: ((_ topic: String, _ buffer: UnsafeBufferPointer<UTF8.CodeUnit>) -> ())?
-    var receivingBytes: ((_ topic: String, _ bytes: [UTF8.CodeUnit]) -> ())?
-    var receivingData: ((_ topic: String, _ data: Data) -> ())?
+    public var receivingMessage: ((_ topic: String, _ message: String) -> ())?
+    public var receivingBuffer: ((_ topic: String, _ buffer: UnsafeBufferPointer<UTF8.CodeUnit>) -> ())?
+    public var receivingBytes: ((_ topic: String, _ bytes: [UTF8.CodeUnit]) -> ())?
+    public var receivingData: ((_ topic: String, _ data: Data) -> ())?
     
-    struct Options {
-        var port: Int? = nil
-        var pingInterval: UInt16 = 10
-        var useTLS = false
-        var securityLevel = StreamSocketSecurityLevel.tlSv1
-        var networkServiceType = StreamNetworkServiceTypeValue.background
-        var username: String? = nil
-        var password: String? = nil
-        var clientId: String? = nil
-        var bufferSize: Int = 4096
-        var readQosClass: DispatchQoS.QoSClass = .background
+    public struct Options {
+        public var port: Int? = nil
+        public var pingInterval: UInt16 = 10
+        public var useTLS = false
+        public var securityLevel = StreamSocketSecurityLevel.tlSv1
+        public var networkServiceType = StreamNetworkServiceTypeValue.background
+        public var username: String? = nil
+        public var password: String? = nil
+        public var clientId: String? = nil
+        public var bufferSize: Int = 4096
+        public var readQosClass: DispatchQoS.QoSClass = .background
         
-        var concretePort: Int {
+        public var concretePort: Int {
             return port ?? (useTLS ? 8883 : 1883)
         }
         
@@ -67,6 +67,19 @@ final class LightMQTT {
                 result.replaceSubrange(range, with: hexNibbles)
             }
             return result
+        }
+
+        public init(port: Int? = nil, pingInterval: UInt16 = 10, useTLS: Bool = false, securityLevel: StreamSocketSecurityLevel = StreamSocketSecurityLevel.tlSv1, networkServiceType: StreamNetworkServiceTypeValue = StreamNetworkServiceTypeValue.background, username: String? = nil, password: String? = nil, clientId: String? = nil, bufferSize: Int = 4096, readQosClass: DispatchQoS.QoSClass = .background) {
+            self.port = port
+            self.pingInterval = pingInterval
+            self.useTLS = useTLS
+            self.securityLevel = securityLevel
+            self.networkServiceType = networkServiceType
+            self.username = username
+            self.password = password
+            self.clientId = clientId
+            self.bufferSize = bufferSize
+            self.readQosClass = readQosClass
         }
     }
     
@@ -81,7 +94,7 @@ final class LightMQTT {
     
     // MARK: - Public interface
     
-    init(host: String, options: Options = Options()) {
+    public init(host: String, options: Options = Options()) {
         self.host = host
         self.options = options
     }
@@ -90,7 +103,7 @@ final class LightMQTT {
         disconnect()
     }
     
-    var isConnected: Bool {
+    public var isConnected: Bool {
         if let input = inputStream, input.isConnected, let output = outputStream, output.isConnected {
             return true
         }
@@ -98,7 +111,7 @@ final class LightMQTT {
         return false
     }
     
-    func connect(completion: ((_ success: Bool) -> ())? = nil) {
+    public func connect(completion: ((_ success: Bool) -> ())? = nil) {
         openStreams() { [weak self] streams in
             guard let s = self, let streams = streams else {
                 completion?(false)
@@ -127,7 +140,7 @@ final class LightMQTT {
         }
     }
     
-    func disconnect(streams: (input: InputStream, output: OutputStream)? = nil) {
+    public func disconnect(streams: (input: InputStream, output: OutputStream)? = nil) {
         if let streams = streams {
             mqttDisconnect() { [weak self] success in
                 self?.closeStreams(streams)
@@ -140,15 +153,15 @@ final class LightMQTT {
         }
     }
     
-    func subscribe(to topic: String) {
+    public func subscribe(to topic: String) {
         mqttSubscribe(to: topic)
     }
     
-    func unsubscribe(from topic: String) {
+    public func unsubscribe(from topic: String) {
         mqttUnsubscribe(from: topic)
     }
     
-    func publish(to topic: String, message: Data?) {
+    public func publish(to topic: String, message: Data?) {
         mqttPublish(to: topic, message: message ?? Data())
     }
     
