@@ -14,8 +14,7 @@ let package = Package(
     targets: [
         .target(
             name: "LightMQTT",
-            dependencies: [],
-            path: "Sources"
+            dependencies: []
         ),
     ]
 )
