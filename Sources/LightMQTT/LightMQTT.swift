@@ -1,7 +1,6 @@
 //
 //  LightMQTT.swift
 //
-
 import Foundation
 
 fileprivate enum PacketType: UInt8 {
@@ -49,6 +48,7 @@ public final class LightMQTT {
         public var pingInterval: UInt16 = 10
         public var useTLS = false
         public var securityLevel = StreamSocketSecurityLevel.tlSv1
+        public var allowUntrustCACertificate = false
         public var networkServiceType = StreamNetworkServiceTypeValue.background
         public var username: String? = nil
         public var password: String? = nil
@@ -69,11 +69,12 @@ public final class LightMQTT {
             return result
         }
 
-        public init(port: Int? = nil, pingInterval: UInt16 = 10, useTLS: Bool = false, securityLevel: StreamSocketSecurityLevel = StreamSocketSecurityLevel.tlSv1, networkServiceType: StreamNetworkServiceTypeValue = StreamNetworkServiceTypeValue.background, username: String? = nil, password: String? = nil, clientId: String? = nil, bufferSize: Int = 4096, readQosClass: DispatchQoS.QoSClass = .background) {
+        public init(port: Int? = nil, pingInterval: UInt16 = 10, useTLS: Bool = false, securityLevel: StreamSocketSecurityLevel = StreamSocketSecurityLevel.tlSv1, allowUntrustCACertificate: Bool = false, networkServiceType: StreamNetworkServiceTypeValue = StreamNetworkServiceTypeValue.background, username: String? = nil, password: String? = nil, clientId: String? = nil, bufferSize: Int = 4096, readQosClass: DispatchQoS.QoSClass = .background) {
             self.port = port
             self.pingInterval = pingInterval
             self.useTLS = useTLS
             self.securityLevel = securityLevel
+            self.allowUntrustCACertificate = allowUntrustCACertificate
             self.networkServiceType = networkServiceType
             self.username = username
             self.password = password
@@ -199,6 +200,11 @@ public final class LightMQTT {
         if options.useTLS {
             input.setProperty(options.securityLevel, forKey: .socketSecurityLevelKey)
             output.setProperty(options.securityLevel, forKey: .socketSecurityLevelKey)
+        }
+        
+        if options.allowUntrustCACertificate {
+            input.setProperty(false, forKey: kCFStreamSSLValidatesCertificateChain as Stream.PropertyKey)
+            output.setProperty(false, forKey: kCFStreamSSLValidatesCertificateChain as Stream.PropertyKey)
         }
         
         input.setProperty(options.networkServiceType, forKey: .networkServiceType)
